@@ -39,6 +39,11 @@ RANGE                           = 'Cumulative Mean Range'
 CLOSE                           = 'Close'
 HIGHLOW                         = 'High/Low'
 
+OB_ACTIVE                       = 0
+OB_PARTIAL                      = 1
+OB_MITIGATED                    = 2
+OB_INVALID                      = 3
+
 SOLID                           = '⎯⎯⎯'
 DASHED                          = '----'
 DOTTED                          = '····'
@@ -51,6 +56,7 @@ EQUAL_GROUP                     = 'EQH/EQL'
 GAPS_GROUP                      = 'Fair Value Gaps'
 LEVELS_GROUP                    = 'Highs & Lows MTF'
 ZONES_GROUP                     = 'Premium & Discount Zones'
+ADVANCED_GROUP                  = 'Advanced SMC Features'
 
 modeTooltip                     = 'Allows to display historical Structure or only the recent ones'
 styleTooltip                    = 'Indicator color theme'
@@ -105,6 +111,20 @@ internalBullishOrderBlockColor  = input.color(color.new(#3179f5, 80), 'Internal 
 internalBearishOrderBlockColor  = input.color(color.new(#f77c80, 80), 'Internal Bearish OB',    group = BLOCKS_GROUP)
 swingBullishOrderBlockColor     = input.color(color.new(#1848cc, 80), 'Bullish OB',             group = BLOCKS_GROUP)
 swingBearishOrderBlockColor     = input.color(color.new(#b22833, 80), 'Bearish OB',             group = BLOCKS_GROUP)
+
+// Advanced SMC Features - All OFF by default
+requireLiquiditySweepForOBInput    = input(        false,      'Require Liquidity Sweep for OB',     group = ADVANCED_GROUP, tooltip = 'Only show Order Blocks that swept liquidity')
+enforcePDFilterInput               = input(        false,      'Premium/Discount Filter',             group = ADVANCED_GROUP, tooltip = 'Bullish OBs in Discount, Bearish OBs in Premium')
+fvgObConfluenceFilterInput         = input(        false,      'FVG-OB Confluence Filter',            group = ADVANCED_GROUP, tooltip = 'Filter OBs by Fair Value Gap confluence')
+fvgObConfluenceAtrMultInput        = input.float(  0.5,        'FVG-OB Distance (ATR)',               group = ADVANCED_GROUP, tooltip = 'Max distance between OB and FVG in ATR multiples', minval = 0.1, maxval = 3.0, step = 0.1)
+showConfirmationZonesInput         = input(        false,      'Show Confirmation Zones',             group = ADVANCED_GROUP, tooltip = 'Show wait-for-LTF-confirmation areas')
+confirmationZoneExtensionInput     = input.int(    20,         'Confirmation Zone Extension',         group = ADVANCED_GROUP, tooltip = 'Bars to extend confirmation zones', minval = 5, maxval = 100)
+confirmationZoneOpacityInput       = input.int(    90,         'Confirmation Zone Opacity',           group = ADVANCED_GROUP, tooltip = 'Opacity of confirmation zones', minval = 50, maxval = 95)
+useBOSDisplacementFilterInput      = input(        false,      'BOS/CHoCH Displacement Filter',       group = ADVANCED_GROUP, tooltip = 'Filter structure breaks by displacement')
+bosDisplacementAtrMultInput        = input.float(  1.0,        'BOS Displacement (ATR)',              group = ADVANCED_GROUP, tooltip = 'Minimum displacement in ATR multiples', minval = 0.5, maxval = 5.0, step = 0.1)
+bosBodyToWickRatioInput            = input.float(  0.5,        'BOS Body/Wick Ratio',                 group = ADVANCED_GROUP, tooltip = 'Minimum body proportion on breakout candle', minval = 0.1, maxval = 1.0, step = 0.1)
+showOBQualityScoreInput            = input(        false,      'Show OB Quality Score',               group = ADVANCED_GROUP, tooltip = 'Show quality score labels near Order Blocks')
+partialMitigationThresholdInput    = input.float(  0.3,        'Partial Mitigation Threshold',        group = ADVANCED_GROUP, tooltip = 'Threshold for partial mitigation status', minval = 0.1, maxval = 0.9, step = 0.1)
 
 showEqualHighsLowsInput         = input(        true,       'Equal High/Low',           group = EQUAL_GROUP,    tooltip = showEqualHighsLowsTooltip)
 equalHighsLowsLengthInput       = input.int(    3,          'Bars Confirmation',        group = EQUAL_GROUP,    tooltip = equalHighsLowsLengthTooltip,      minval = 1)
@@ -235,6 +255,27 @@ type orderBlock
     int barTime    
     int bias
 
+// @type                            UDT representing order block metadata for advanced features
+// @field tookLiquidity             true if order block swept liquidity during formation
+// @field sweptLevel                the exact price level that was swept
+// @field status                    OB_ACTIVE, OB_PARTIAL, OB_MITIGATED, or OB_INVALID
+// @field mitigationDepth           mitigation depth from 0 to 1+
+// @field swingTop                  swing high at time of OB creation
+// @field swingBottom               swing low at time of OB creation  
+// @field midPrice                  middle price of the order block
+// @field zoneEntered               true if price has entered the OB zone
+// @field displacementPass          true if displacement filter passed during creation
+type orderBlockMeta
+    bool tookLiquidity              = false
+    float sweptLevel                = na
+    int status                      = OB_ACTIVE
+    float mitigationDepth           = 0.0
+    float swingTop                  = na
+    float swingBottom               = na
+    float midPrice                  = na
+    bool zoneEntered                = false
+    bool displacementPass           = false
+
 // @variable                        current swing pivot high    
 var pivot swingHigh                 = pivot.new(na,na,false)
 // @variable                        current swing pivot low
@@ -273,6 +314,10 @@ var trailingExtremes trailing       = trailingExtremes.new()
 var array<orderBlock> swingOrderBlocks      = array.new<orderBlock>()
 // @variable                                storage for orderBlock UDTs (internal order blocks)
 var array<orderBlock> internalOrderBlocks   = array.new<orderBlock>()
+// @variable                                storage for orderBlock metadata (swing order blocks)
+var array<orderBlockMeta> swingOrderBlocksMeta      = array.new<orderBlockMeta>()
+// @variable                                storage for orderBlock metadata (internal order blocks)
+var array<orderBlockMeta> internalOrderBlocksMeta   = array.new<orderBlockMeta>()
 // @variable                                storage for swing order blocks boxes
 var array<box> swingOrderBlocksBoxes        = array.new<box>()
 // @variable                                storage for internal order blocks boxes
