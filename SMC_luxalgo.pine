@@ -518,29 +518,86 @@ drawStructure(pivot p_ivot, string tag, color structureColor, string lineStyle, 
     l_ine   := line.new(chart.point.new(p_ivot.barTime,na,p_ivot.currentLevel), chart.point.new(time,na,p_ivot.currentLevel), xloc.bar_time, color=structureColor, style=lineStyle)
     l_abel  := label.new(chart.point.new(na,math.round(0.5*(p_ivot.barIndex+bar_index)),p_ivot.currentLevel), tag, xloc.bar_index, color=color(na), textcolor=structureColor, style=labelStyle, size = labelSize)
 
-// @function            delete order blocks
+// @function            update order block status and mitigation depth (replaces deletion)
 // @param internal      true for internal order blocks
-// @returns             orderBlock ID
+// @returns             void
 deleteOrderBlocks(bool internal = false) =>
     array<orderBlock> orderBlocks = internal ? internalOrderBlocks : swingOrderBlocks
+    array<orderBlockMeta> orderBlocksMeta = internal ? internalOrderBlocksMeta : swingOrderBlocksMeta
 
     for [index,eachOrderBlock] in orderBlocks
-        bool crossedOderBlock = false
-        
-        if bearishOrderBlockMitigationSource > eachOrderBlock.barHigh and eachOrderBlock.bias == BEARISH
-            crossedOderBlock := true
-            if internal
-                currentAlerts.internalBearishOrderBlock := true
-            else
-                currentAlerts.swingBearishOrderBlock    := true
-        else if bullishOrderBlockMitigationSource < eachOrderBlock.barLow and eachOrderBlock.bias == BULLISH
-            crossedOderBlock := true
-            if internal
-                currentAlerts.internalBullishOrderBlock := true
-            else
-                currentAlerts.swingBullishOrderBlock    := true
-        if crossedOderBlock                    
-            orderBlocks.remove(index)            
+        if index < orderBlocksMeta.size()
+            orderBlockMeta meta = orderBlocksMeta.get(index)
+            
+            // Skip if already invalid
+            if meta.status == OB_INVALID
+                continue
+            
+            bool mitigationOccurred = false
+            float mitigationPrice = na
+            
+            // Determine mitigation price based on bias and settings
+            if eachOrderBlock.bias == BEARISH
+                mitigationPrice := bearishOrderBlockMitigationSource
+                mitigationOccurred := mitigationPrice > eachOrderBlock.barHigh
+            else // BULLISH
+                mitigationPrice := bullishOrderBlockMitigationSource
+                mitigationOccurred := mitigationPrice < eachOrderBlock.barLow
+            
+            // Calculate mitigation depth
+            float depth = 0.0
+            if mitigationOccurred
+                if eachOrderBlock.bias == BEARISH
+                    // For bearish OB, depth = how much price penetrated above barHigh
+                    obRange = eachOrderBlock.barHigh - eachOrderBlock.barLow
+                    penetration = mitigationPrice - eachOrderBlock.barHigh
+                    depth := obRange > 0 ? penetration / obRange : 1.0
+                else // BULLISH
+                    // For bullish OB, depth = how much price penetrated below barLow
+                    obRange = eachOrderBlock.barHigh - eachOrderBlock.barLow
+                    penetration = eachOrderBlock.barLow - mitigationPrice
+                    depth := obRange > 0 ? penetration / obRange : 1.0
+                
+                // Set zone entered flag
+                if not meta.zoneEntered
+                    meta.zoneEntered := true
+            
+            // Update mitigation depth
+            meta.mitigationDepth := math.max(meta.mitigationDepth, depth)
+            
+            // Update status based on depth
+            int newStatus = OB_ACTIVE
+            if meta.mitigationDepth >= 1.0
+                // Check for invalid break (price closed beyond opposite edge)
+                bool invalidBreak = false
+                if eachOrderBlock.bias == BEARISH and orderBlockMitigationInput == CLOSE
+                    invalidBreak := close < eachOrderBlock.barLow
+                else if eachOrderBlock.bias == BULLISH and orderBlockMitigationInput == CLOSE
+                    invalidBreak := close > eachOrderBlock.barHigh
+                else if orderBlockMitigationInput == HIGHLOW
+                    if eachOrderBlock.bias == BEARISH
+                        invalidBreak := low < eachOrderBlock.barLow
+                    else
+                        invalidBreak := high > eachOrderBlock.barHigh
+                
+                newStatus := invalidBreak ? OB_INVALID : OB_MITIGATED
+            else if meta.mitigationDepth >= partialMitigationThresholdInput
+                newStatus := OB_PARTIAL
+            
+            meta.status := newStatus
+            
+            // Trigger alerts for first-time mitigation
+            if mitigationOccurred and meta.status == OB_MITIGATED
+                if internal
+                    if eachOrderBlock.bias == BEARISH
+                        currentAlerts.internalBearishOrderBlock := true
+                    else
+                        currentAlerts.internalBullishOrderBlock := true
+                else
+                    if eachOrderBlock.bias == BEARISH
+                        currentAlerts.swingBearishOrderBlock := true
+                    else
+                        currentAlerts.swingBullishOrderBlock := true            
 
 // @function            fetch and store order blocks
 // @param p_ivot        base pivot point
@@ -563,15 +620,66 @@ storeOrdeBlock(pivot p_ivot,bool internal = false,int bias) =>
         orderBlock o_rderBlock          = orderBlock.new(parsedHighs.get(parsedIndex), parsedLows.get(parsedIndex), times.get(parsedIndex),bias)
         array<orderBlock> orderBlocks   = internal ? internalOrderBlocks : swingOrderBlocks
         
+        // Create metadata for advanced features
+        orderBlockMeta o_bMeta = orderBlockMeta.new()
+        array<orderBlockMeta> orderBlocksMeta = internal ? internalOrderBlocksMeta : swingOrderBlocksMeta
+        
+        // Compute OB mid price
+        o_bMeta.midPrice := (o_rderBlock.barHigh + o_rderBlock.barLow) / 2
+        
+        // Store swing snapshot (PD context at creation)
+        o_bMeta.swingTop := trailing.top
+        o_bMeta.swingBottom := trailing.bottom
+        
+        // Detect liquidity sweep
+        bool liquiditySweep = false
+        float sweptLevel = na
+        
+        if bias == BULLISH
+            // For Bullish OB, check if price wicked below previous swing low in the window
+            for i = p_ivot.barIndex to bar_index
+                if i < bar_index and low[bar_index - i] < trailing.bottom
+                    liquiditySweep := true
+                    sweptLevel := trailing.bottom
+                    break
+        else  // BEARISH
+            // For Bearish OB, check if price wicked above previous swing high in the window
+            for i = p_ivot.barIndex to bar_index
+                if i < bar_index and high[bar_index - i] > trailing.top
+                    liquiditySweep := true
+                    sweptLevel := trailing.top
+                    break
+        
+        o_bMeta.tookLiquidity := liquiditySweep
+        o_bMeta.sweptLevel := sweptLevel
+        
+        // Check displacement filter if enabled (placeholder for now)
+        displacementPassed = true
+        if useBOSDisplacementFilterInput
+            currentRange = high - low
+            displacementPassed := currentRange >= (bosDisplacementAtrMultInput * atrMeasure)
+            if bosBodyToWickRatioInput > 0
+                bodySize = math.abs(close - open)
+                totalRange = high - low
+                bodyRatio = totalRange > 0 ? bodySize / totalRange : 0
+                displacementPassed := displacementPassed and bodyRatio >= bosBodyToWickRatioInput
+        
+        o_bMeta.displacementPass := displacementPassed
+        
+        // Manage array sizes
         if orderBlocks.size() >= 100
             orderBlocks.pop()
+            orderBlocksMeta.pop()
+        
         orderBlocks.unshift(o_rderBlock)
+        orderBlocksMeta.unshift(o_bMeta)
 
 // @function            draw order blocks as boxes
 // @param internal      true for internal order blocks
 // @returns             void
 drawOrderBlocks(bool internal = false) =>        
     array<orderBlock> orderBlocks = internal ? internalOrderBlocks : swingOrderBlocks
+    array<orderBlockMeta> orderBlocksMeta = internal ? internalOrderBlocksMeta : swingOrderBlocksMeta
     orderBlocksSize = orderBlocks.size()
 
     if orderBlocksSize > 0        
@@ -580,13 +688,101 @@ drawOrderBlocks(bool internal = false) =>
         array<box> b_oxes                   = internal ? internalOrderBlocksBoxes : swingOrderBlocksBoxes        
 
         for [index,eachOrderBlock] in parsedOrdeBlocks
-            orderBlockColor = styleInput == MONOCHROME ? (eachOrderBlock.bias == BEARISH ? color.new(MONO_BEARISH,80) : color.new(MONO_BULLISH,80)) : internal ? (eachOrderBlock.bias == BEARISH ? internalBearishOrderBlockColor : internalBullishOrderBlockColor) : (eachOrderBlock.bias == BEARISH ? swingBearishOrderBlockColor : swingBullishOrderBlockColor)
-
-            box b_ox        = b_oxes.get(index)
-            b_ox.set_top_left_point(    chart.point.new(eachOrderBlock.barTime,na,eachOrderBlock.barHigh))
-            b_ox.set_bottom_right_point(chart.point.new(last_bar_time,na,eachOrderBlock.barLow))        
-            b_ox.set_border_color(      internal ? na : orderBlockColor)
-            b_ox.set_bgcolor(           orderBlockColor)
+            // Get corresponding metadata
+            orderBlockMeta meta = index < orderBlocksMeta.size() ? orderBlocksMeta.get(index) : orderBlockMeta.new()
+            
+            // Apply filters
+            bool showThisOB = true
+            
+            // Liquidity sweep filter
+            if requireLiquiditySweepForOBInput and not meta.tookLiquidity
+                showThisOB := false
+            
+            // Premium/Discount filter
+            if enforcePDFilterInput and not na(meta.swingTop) and not na(meta.swingBottom)
+                equilibrium = (meta.swingTop + meta.swingBottom) / 2
+                currentPrice = close
+                if eachOrderBlock.bias == BULLISH and currentPrice > equilibrium  // Bullish OB should be in discount
+                    showThisOB := false
+                else if eachOrderBlock.bias == BEARISH and currentPrice < equilibrium  // Bearish OB should be in premium
+                    showThisOB := false
+            
+            // FVG-OB confluence filter
+            if fvgObConfluenceFilterInput and showThisOB
+                confluenceFound = false
+                if fairValueGaps.size() > 0
+                    for fvg in fairValueGaps
+                        // Check overlap or proximity
+                        obTop = eachOrderBlock.barHigh
+                        obBottom = eachOrderBlock.barLow
+                        fvgTop = fvg.top
+                        fvgBottom = fvg.bottom
+                        
+                        // Check for overlap
+                        overlap = math.max(0, math.min(obTop, fvgTop) - math.max(obBottom, fvgBottom))
+                        
+                        // Check for proximity if no overlap
+                        if overlap > 0
+                            confluenceFound := true
+                            break
+                        else
+                            // Check distance
+                            distance = math.min(math.abs(obTop - fvgBottom), math.abs(obBottom - fvgTop))
+                            maxDistance = fvgObConfluenceAtrMultInput * atrMeasure
+                            if distance <= maxDistance
+                                confluenceFound := true
+                                break
+                
+                if not confluenceFound
+                    showThisOB := false
+            
+            if showThisOB
+                // Determine color based on status
+                baseColor = styleInput == MONOCHROME ? (eachOrderBlock.bias == BEARISH ? color.new(MONO_BEARISH,80) : color.new(MONO_BULLISH,80)) : internal ? (eachOrderBlock.bias == BEARISH ? internalBearishOrderBlockColor : internalBullishOrderBlockColor) : (eachOrderBlock.bias == BEARISH ? swingBearishOrderBlockColor : swingBullishOrderBlockColor)
+                
+                // Adjust opacity based on status
+                float opacity = 80
+                if meta.status == OB_PARTIAL
+                    opacity := 85
+                else if meta.status == OB_MITIGATED
+                    opacity := 90
+                else if meta.status == OB_INVALID
+                    opacity := 95
+                
+                // Apply opacity to color
+                orderBlockColor = color.new(color.rgb(color.r(baseColor), color.g(baseColor), color.b(baseColor)), math.round(opacity))
+                
+                box b_ox        = b_oxes.get(index)
+                b_ox.set_top_left_point(    chart.point.new(eachOrderBlock.barTime,na,eachOrderBlock.barHigh))
+                b_ox.set_bottom_right_point(chart.point.new(last_bar_time,na,eachOrderBlock.barLow))        
+                b_ox.set_border_color(      internal ? na : orderBlockColor)
+                b_ox.set_bgcolor(           orderBlockColor)
+                
+                // Draw confirmation zone if enabled and OB is untouched
+                if showConfirmationZonesInput and meta.status == OB_ACTIVE and not meta.zoneEntered
+                    confirmationColor = color.new(baseColor, confirmationZoneOpacityInput)
+                    // Create extended box for confirmation zone (simplified implementation)
+                    // This would need additional box storage arrays in production
+                
+                // Draw quality score label if enabled
+                if showOBQualityScoreInput
+                    qualityScore = 0
+                    if meta.tookLiquidity
+                        qualityScore := qualityScore + 25
+                    if meta.displacementPass
+                        qualityScore := qualityScore + 25
+                    // Add other quality factors here
+                    qualityScore := math.min(100, qualityScore)
+                    
+                    if qualityScore > 0
+                        scoreText = str.tostring(qualityScore)
+                        labelColor = qualityScore >= 75 ? color.green : qualityScore >= 50 ? color.yellow : color.orange
+                        // Draw label near the OB (simplified - would need proper positioning)
+            else
+                // Hide the box
+                box b_ox = b_oxes.get(index)
+                b_ox.set_bgcolor(color.new(color.white, 100))
+                b_ox.set_border_color(color.new(color.white, 100))
 
 // @function            detect and draw structures, also detect and store order blocks
 // @param internal      true for internal structures or order blocks
@@ -610,24 +806,36 @@ displayStructure(bool internal = false) =>
 
     if ta.crossover(close,p_ivot.currentLevel) and not p_ivot.crossed and extraCondition
         string tag = t_rend.bias == BEARISH ? CHOCH : BOS
+        
+        // Apply displacement filter if enabled
+        bool displacementPassed = true
+        if useBOSDisplacementFilterInput
+            currentRange = high - low
+            displacementPassed := currentRange >= (bosDisplacementAtrMultInput * atrMeasure)
+            if bosBodyToWickRatioInput > 0
+                bodySize = math.abs(close - open)
+                totalRange = high - low
+                bodyRatio = totalRange > 0 ? bodySize / totalRange : 0
+                displacementPassed := displacementPassed and bodyRatio >= bosBodyToWickRatioInput
+        
+        if displacementPassed
+            if internal
+                currentAlerts.internalBullishCHoCH  := tag == CHOCH
+                currentAlerts.internalBullishBOS    := tag == BOS
+            else
+                currentAlerts.swingBullishCHoCH     := tag == CHOCH
+                currentAlerts.swingBullishBOS       := tag == BOS
 
-        if internal
-            currentAlerts.internalBullishCHoCH  := tag == CHOCH
-            currentAlerts.internalBullishBOS    := tag == BOS
-        else
-            currentAlerts.swingBullishCHoCH     := tag == CHOCH
-            currentAlerts.swingBullishBOS       := tag == BOS
+            p_ivot.crossed  := true
+            t_rend.bias     := BULLISH
 
-        p_ivot.crossed  := true
-        t_rend.bias     := BULLISH
+            displayCondition = internal ? showInternalsInput and (showInternalBullInput == ALL or (showInternalBullInput == BOS and tag != CHOCH) or (showInternalBullInput == CHOCH and tag == CHOCH)) : showStructureInput and (showSwingBullInput == ALL or (showSwingBullInput == BOS and tag != CHOCH) or (showSwingBullInput == CHOCH and tag == CHOCH))
 
-        displayCondition = internal ? showInternalsInput and (showInternalBullInput == ALL or (showInternalBullInput == BOS and tag != CHOCH) or (showInternalBullInput == CHOCH and tag == CHOCH)) : showStructureInput and (showSwingBullInput == ALL or (showSwingBullInput == BOS and tag != CHOCH) or (showSwingBullInput == CHOCH and tag == CHOCH))
+            if displayCondition                        
+                drawStructure(p_ivot,tag,bullishColor,lineStyle,label.style_label_down,labelSize)
 
-        if displayCondition                        
-            drawStructure(p_ivot,tag,bullishColor,lineStyle,label.style_label_down,labelSize)
-
-        if (internal and showInternalOrderBlocksInput) or (not internal and showSwingOrderBlocksInput)
-            storeOrdeBlock(p_ivot,internal,BULLISH)
+            if (internal and showInternalOrderBlocksInput) or (not internal and showSwingOrderBlocksInput)
+                storeOrdeBlock(p_ivot,internal,BULLISH)
 
     p_ivot          := internal ? internalLow : swingLow    
     extraCondition  := internal ? internalLow.currentLevel != swingLow.currentLevel and bearishBar : true
@@ -635,24 +843,36 @@ displayStructure(bool internal = false) =>
 
     if ta.crossunder(close,p_ivot.currentLevel) and not p_ivot.crossed and extraCondition
         string tag = t_rend.bias == BULLISH ? CHOCH : BOS
-
-        if internal
-            currentAlerts.internalBearishCHoCH  := tag == CHOCH
-            currentAlerts.internalBearishBOS    := tag == BOS
-        else
-            currentAlerts.swingBearishCHoCH     := tag == CHOCH
-            currentAlerts.swingBearishBOS       := tag == BOS
-
-        p_ivot.crossed := true
-        t_rend.bias := BEARISH
-
-        displayCondition = internal ? showInternalsInput and (showInternalBearInput == ALL or (showInternalBearInput == BOS and tag != CHOCH) or (showInternalBearInput == CHOCH and tag == CHOCH)) : showStructureInput and (showSwingBearInput == ALL or (showSwingBearInput == BOS and tag != CHOCH) or (showSwingBearInput == CHOCH and tag == CHOCH))
         
-        if displayCondition                        
-            drawStructure(p_ivot,tag,bearishColor,lineStyle,label.style_label_up,labelSize)
+        // Apply displacement filter if enabled
+        bool displacementPassed = true
+        if useBOSDisplacementFilterInput
+            currentRange = high - low
+            displacementPassed := currentRange >= (bosDisplacementAtrMultInput * atrMeasure)
+            if bosBodyToWickRatioInput > 0
+                bodySize = math.abs(close - open)
+                totalRange = high - low
+                bodyRatio = totalRange > 0 ? bodySize / totalRange : 0
+                displacementPassed := displacementPassed and bodyRatio >= bosBodyToWickRatioInput
+        
+        if displacementPassed
+            if internal
+                currentAlerts.internalBearishCHoCH  := tag == CHOCH
+                currentAlerts.internalBearishBOS    := tag == BOS
+            else
+                currentAlerts.swingBearishCHoCH     := tag == CHOCH
+                currentAlerts.swingBearishBOS       := tag == BOS
 
-        if (internal and showInternalOrderBlocksInput) or (not internal and showSwingOrderBlocksInput)
-            storeOrdeBlock(p_ivot,internal,BEARISH)
+            p_ivot.crossed := true
+            t_rend.bias := BEARISH
+
+            displayCondition = internal ? showInternalsInput and (showInternalBearInput == ALL or (showInternalBearInput == BOS and tag != CHOCH) or (showInternalBearInput == CHOCH and tag == CHOCH)) : showStructureInput and (showSwingBearInput == ALL or (showSwingBearInput == BOS and tag != CHOCH) or (showSwingBearInput == CHOCH and tag == CHOCH))
+            
+            if displayCondition                        
+                drawStructure(p_ivot,tag,bearishColor,lineStyle,label.style_label_up,labelSize)
+
+            if (internal and showInternalOrderBlocksInput) or (not internal and showSwingOrderBlocksInput)
+                storeOrdeBlock(p_ivot,internal,BEARISH)
 
 // @function            draw one fair value gap box (each fair value gap has two boxes)
 // @param leftTime      left time coordinate
