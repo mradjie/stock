@@ -400,6 +400,7 @@ drawEqualHighLow(pivot p_ivot, float level, int size, bool equalHigh) =>
     e_qualDisplay.l_ine     := line.new(chart.point.new(p_ivot.barTime,na,p_ivot.currentLevel), chart.point.new(time[size],na,level), xloc = xloc.bar_time, color = equalColor, style = line.style_dotted)
     labelPosition           = math.round(0.5*(p_ivot.barIndex + bar_index - size))
     e_qualDisplay.l_abel    := label.new(chart.point.new(na,labelPosition,level), tag, xloc.bar_index, color = color(na), textcolor = equalColor, style = labelStyle, size = equalHighsLowsSizeInput)
+    0.0
 
 // @function            store current structure and trailing swing points, and also display swing points and equal highs/lows
 // @param size          (int) structure size
@@ -472,6 +473,7 @@ drawStructure(pivot p_ivot, string tag, color structureColor, string lineStyle, 
 
     l_ine   := line.new(chart.point.new(p_ivot.barTime,na,p_ivot.currentLevel), chart.point.new(time,na,p_ivot.currentLevel), xloc.bar_time, color=structureColor, style=lineStyle)
     l_abel  := label.new(chart.point.new(na,math.round(0.5*(p_ivot.barIndex+bar_index)),p_ivot.currentLevel), tag, xloc.bar_index, color=color(na), textcolor=structureColor, style=labelStyle, size = labelSize)
+    0.0
 
 // @function            delete order blocks
 // @param internal      true for internal order blocks
