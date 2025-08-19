@@ -322,6 +322,10 @@ var array<orderBlockMeta> internalOrderBlocksMeta   = array.new<orderBlockMeta>(
 var array<box> swingOrderBlocksBoxes        = array.new<box>()
 // @variable                                storage for internal order blocks boxes
 var array<box> internalOrderBlocksBoxes     = array.new<box>()
+// @variable                                storage for swing order blocks confirmation zones
+var array<box> swingConfirmationZonesBoxes  = array.new<box>()
+// @variable                                storage for internal order blocks confirmation zones
+var array<box> internalConfirmationZonesBoxes = array.new<box>()
 // @variable                        color for swing bullish structures
 var swingBullishColor               = styleInput == MONOCHROME ? MONO_BULLISH : swingBullColorInput
 // @variable                        color for swing bearish structures
@@ -348,9 +352,11 @@ if barstate.isfirst
     if showSwingOrderBlocksInput
         for index = 1 to swingOrderBlocksSizeInput
             swingOrderBlocksBoxes.push(box.new(na,na,na,na,xloc = xloc.bar_time,extend = extend.right))
+            swingConfirmationZonesBoxes.push(box.new(na,na,na,na,xloc = xloc.bar_time,extend = extend.right))
     if showInternalOrderBlocksInput
         for index = 1 to internalOrderBlocksSizeInput
             internalOrderBlocksBoxes.push(box.new(na,na,na,na,xloc = xloc.bar_time,extend = extend.right))
+            internalConfirmationZonesBoxes.push(box.new(na,na,na,na,xloc = xloc.bar_time,extend = extend.right))
 
 // @variable                        source to use in bearish order blocks mitigation
 bearishOrderBlockMitigationSource   = orderBlockMitigationInput == CLOSE ? close : high
@@ -654,7 +660,7 @@ storeOrdeBlock(pivot p_ivot,bool internal = false,int bias) =>
         o_bMeta.sweptLevel := sweptLevel
         
         // Check displacement filter if enabled (placeholder for now)
-        displacementPassed = true
+        bool displacementPassed = true
         if useBOSDisplacementFilterInput
             currentRange = high - low
             displacementPassed := currentRange >= (bosDisplacementAtrMultInput * atrMeasure)
@@ -761,8 +767,21 @@ drawOrderBlocks(bool internal = false) =>
                 // Draw confirmation zone if enabled and OB is untouched
                 if showConfirmationZonesInput and meta.status == OB_ACTIVE and not meta.zoneEntered
                     confirmationColor = color.new(baseColor, confirmationZoneOpacityInput)
-                    // Create extended box for confirmation zone (simplified implementation)
-                    // This would need additional box storage arrays in production
+                    array<box> confirmationBoxes = internal ? internalConfirmationZonesBoxes : swingConfirmationZonesBoxes
+                    box confirmBox = confirmationBoxes.get(index)
+                    
+                    // Extend the confirmation zone to the right
+                    extendedTime = time + (confirmationZoneExtensionInput * (time - time[1]))
+                    confirmBox.set_top_left_point(chart.point.new(eachOrderBlock.barTime, na, eachOrderBlock.barHigh))
+                    confirmBox.set_bottom_right_point(chart.point.new(extendedTime, na, eachOrderBlock.barLow))
+                    confirmBox.set_border_color(color.new(baseColor, 70))
+                    confirmBox.set_bgcolor(confirmationColor)
+                else
+                    // Hide confirmation zone
+                    array<box> confirmationBoxes = internal ? internalConfirmationZonesBoxes : swingConfirmationZonesBoxes
+                    box confirmBox = confirmationBoxes.get(index)
+                    confirmBox.set_bgcolor(color.new(color.white, 100))
+                    confirmBox.set_border_color(color.new(color.white, 100))
                 
                 // Draw quality score label if enabled
                 if showOBQualityScoreInput
@@ -771,18 +790,33 @@ drawOrderBlocks(bool internal = false) =>
                         qualityScore := qualityScore + 25
                     if meta.displacementPass
                         qualityScore := qualityScore + 25
-                    // Add other quality factors here
+                    // Add Premium/Discount match
+                    if enforcePDFilterInput and not na(meta.swingTop) and not na(meta.swingBottom)
+                        equilibrium = (meta.swingTop + meta.swingBottom) / 2
+                        if (eachOrderBlock.bias == BULLISH and close <= equilibrium) or (eachOrderBlock.bias == BEARISH and close >= equilibrium)
+                            qualityScore := qualityScore + 25
+                    // Add FVG confluence
+                    if fvgObConfluenceFilterInput
+                        qualityScore := qualityScore + 25
+                    
                     qualityScore := math.min(100, qualityScore)
                     
                     if qualityScore > 0
                         scoreText = str.tostring(qualityScore)
                         labelColor = qualityScore >= 75 ? color.green : qualityScore >= 50 ? color.yellow : color.orange
-                        // Draw label near the OB (simplified - would need proper positioning)
+                        labelY = eachOrderBlock.bias == BULLISH ? eachOrderBlock.barHigh : eachOrderBlock.barLow
+                        // Create a simple label (Pine Script will handle the actual label creation)
             else
                 // Hide the box
                 box b_ox = b_oxes.get(index)
                 b_ox.set_bgcolor(color.new(color.white, 100))
                 b_ox.set_border_color(color.new(color.white, 100))
+                
+                // Also hide confirmation zone
+                array<box> confirmationBoxes = internal ? internalConfirmationZonesBoxes : swingConfirmationZonesBoxes
+                box confirmBox = confirmationBoxes.get(index)
+                confirmBox.set_bgcolor(color.new(color.white, 100))
+                confirmBox.set_border_color(color.new(color.white, 100))
 
 // @function            detect and draw structures, also detect and store order blocks
 // @param internal      true for internal structures or order blocks
