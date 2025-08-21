@@ -1,0 +1,174 @@
+// =============================
+// Advanced SMC Presets (Inputs)
+// =============================
+var string PRESET_GROUP = "Advanced SMC Presets"
+
+// Tambahkan opsi "Swing Trading" & "Ultra-Conservative"
+presetInput = input.string(
+     defval  = "Custom",
+     title   = "Preset",
+     options = ["Custom","Conservative","Balanced","Aggressive","Scalper","Swing Trading","Ultra-Conservative"],
+     group   = PRESET_GROUP,
+     tooltip = "Profil siap pakai untuk mempercepat on/off toggle. Custom = gunakan pengaturan manual Anda."
+)
+
+// Flag preset
+isPresetConservative       = presetInput == "Conservative"
+isPresetBalanced           = presetInput == "Balanced"
+isPresetAggressive         = presetInput == "Aggressive"
+isPresetScalper            = presetInput == "Scalper"
+isPresetSwing              = presetInput == "Swing Trading"
+isPresetUltraConservative  = presetInput == "Ultra-Conservative"
+isPresetCustom             = presetInput == "Custom"
+
+// =======================================================
+// Effective Settings: inisialisasi dari input manual dulu
+// =======================================================
+// Catatan: pastikan nama variabel input manual sesuai script Anda.
+// Contoh di bawah mengikuti nama yang disepakati dalam PR.
+effRequireLiquiditySweepForOB     = requireLiquiditySweepForOBInput
+effEnforcePDFilter                = enforcePDFilterInput
+effFvgObConfluenceFilter          = fvgObConfluenceFilterInput
+effFvgObConfluenceAtrMult         = fvgObConfluenceAtrMultInput
+effShowConfirmationZones          = showConfirmationZonesInput
+effUseBOSDisplacementFilter       = useBOSDisplacementFilterInput
+effBosDisplacementAtrMult         = bosDisplacementAtrMultInput
+effBosBodyToWickRatio             = bosBodyToWickRatioInput
+effShowOBQualityScore             = showOBQualityScoreInput
+effPartialMitigationThreshold     = partialMitigationThresholdInput
+effShowOTEZones                   = showOTEZonesInput
+effEnableTrailingAlerts           = enableTrailingAlertsInput
+effKeepMitigatedOB                = keepMitigatedOBInput
+effShowInvalidatedOB              = showInvalidatedOBInput
+
+// =======================================================
+// Override berdasarkan preset (jika bukan Custom)
+// =======================================================
+if not isPresetCustom
+    // Default “baseline” untuk non-Custom (opsional; bisa dilewati)
+    effRequireLiquiditySweepForOB := effRequireLiquiditySweepForOB
+    effEnforcePDFilter            := effEnforcePDFilter
+    effFvgObConfluenceFilter      := effFvgObConfluenceFilter
+    effFvgObConfluenceAtrMult     := effFvgObConfluenceAtrMult
+    effShowConfirmationZones      := effShowConfirmationZones
+    effUseBOSDisplacementFilter   := effUseBOSDisplacementFilter
+    effBosDisplacementAtrMult     := effBosDisplacementAtrMult
+    effBosBodyToWickRatio         := effBosBodyToWickRatio
+    effShowOBQualityScore         := effShowOBQualityScore
+    effPartialMitigationThreshold := effPartialMitigationThreshold
+    effShowOTEZones               := effShowOTEZones
+    effEnableTrailingAlerts       := effEnableTrailingAlerts
+    effKeepMitigatedOB            := effKeepMitigatedOB
+    effShowInvalidatedOB          := effShowInvalidatedOB
+
+    // Conservative
+    if isPresetConservative
+        effRequireLiquiditySweepForOB := true
+        effEnforcePDFilter            := true
+        effFvgObConfluenceFilter      := true
+        effFvgObConfluenceAtrMult     := 0.4
+        effShowConfirmationZones      := true
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 1.2
+        effBosBodyToWickRatio         := 0.5
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.5
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+
+    // Balanced
+    if isPresetBalanced
+        effRequireLiquiditySweepForOB := true
+        effEnforcePDFilter            := true
+        effFvgObConfluenceFilter      := true
+        effFvgObConfluenceAtrMult     := 0.5
+        effShowConfirmationZones      := true
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 1.0
+        effBosBodyToWickRatio         := 0.5
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.4
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+
+    // Aggressive
+    if isPresetAggressive
+        effRequireLiquiditySweepForOB := false
+        effEnforcePDFilter            := false
+        effFvgObConfluenceFilter      := false
+        effFvgObConfluenceAtrMult     := 0.7
+        effShowConfirmationZones      := true
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 0.8
+        effBosBodyToWickRatio         := 0.4
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.3
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+
+    // Scalper
+    if isPresetScalper
+        effRequireLiquiditySweepForOB := false
+        effEnforcePDFilter            := false
+        effFvgObConfluenceFilter      := false
+        effShowConfirmationZones      := false
+        effUseBOSDisplacementFilter   := false
+        effShowOBQualityScore         := false
+        effPartialMitigationThreshold := 0.3
+        effShowOTEZones               := false
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+
+    // Swing Trading (baru)
+    if isPresetSwing
+        effRequireLiquiditySweepForOB := true
+        effEnforcePDFilter            := true
+        effFvgObConfluenceFilter      := true
+        effFvgObConfluenceAtrMult     := 0.5
+        effShowConfirmationZones      := true
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 1.1
+        effBosBodyToWickRatio         := 0.5
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.5
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+
+    // Ultra-Conservative (baru)
+    if isPresetUltraConservative
+        effRequireLiquiditySweepForOB := true
+        effEnforcePDFilter            := true
+        effFvgObConfluenceFilter      := true
+        effFvgObConfluenceAtrMult     := 0.35   // Lebih ketat
+        effShowConfirmationZones      := true
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 1.5    // Impulse tinggi
+        effBosBodyToWickRatio         := 0.6
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.6
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+
+// =======================================================
+// QS Label Emoji (opsional, non-breaking)
+// =======================================================
+// Tambahkan prefix emoji pada Quality Score untuk baca cepat di preset tertentu
+qsEmojiPrefix = (isPresetSwing or isPresetUltraConservative) ? "⭐ " : ""
+
+// Catatan integrasi:
+// - Di bagian drawOrderBlocks() (atau fungsi yang menggambar QS label), saat effShowOBQualityScore = true,
+//   gabungkan qsEmojiPrefix ke teks label QS Anda, contoh:
+//   labelTextQS = qsEmojiPrefix + "QS: " + str.tostring(qsScore)
+//   label.new(..., text = labelTextQS, ...)
+// Pastikan baris ini mengganti pembuatan teks QS sebelumnya agar tidak dobel.
