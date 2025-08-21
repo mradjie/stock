@@ -306,6 +306,12 @@ if barstate.isfirst
     if showInternalOrderBlocksInput
         for index = 1 to internalOrderBlocksSizeInput
             internalOrderBlocksBoxes.push(box.new(na,na,na,na,xloc = xloc.bar_time,extend = extend.right))
+    
+    // Initialize trailing extremes to avoid na access
+    trailing.top := high
+    trailing.bottom := low
+    trailing.barTime := time
+    trailing.barIndex := bar_index
 
 // @variable                        source to use in bearish order blocks mitigation
 bearishOrderBlockMitigationSource   = orderBlockMitigationInput == CLOSE ? close : high
@@ -314,7 +320,7 @@ bullishOrderBlockMitigationSource   = orderBlockMitigationInput == CLOSE ? close
 // @variable                        default volatility measure
 atrMeasure                          = ta.atr(200)
 // @variable                        parsed volatility measure by user settings
-volatilityMeasure                   = orderBlockFilterInput == ATR ? atrMeasure : ta.cum(ta.tr)/bar_index
+volatilityMeasure                   = orderBlockFilterInput == ATR ? atrMeasure : ta.cum(ta.tr)/math.max(1, bar_index)
 // @variable                        true if current bar is a high volatility bar
 highVolatilityBar                   = (high - low) >= (2 * volatilityMeasure)
 // @variable                        parsed high
@@ -336,8 +342,8 @@ times.push(time)
 // @returns             int
 leg(int size) =>
     var leg     = 0    
-    newLegHigh  = high[size] > ta.highest( size)
-    newLegLow   = low[size]  < ta.lowest(  size)
+    newLegHigh  = high[size] > ta.highest(high, size)
+    newLegLow   = low[size]  < ta.lowest(low, size)
     
     if newLegHigh
         leg := BEARISH_LEG
@@ -371,7 +377,8 @@ drawLabel(int labelTime, float labelPrice, string tag, color labelColor, string 
     var label l_abel = na
 
     if modeInput == PRESENT
-        l_abel.delete()
+        if not na(l_abel)
+            l_abel.delete()
 
     l_abel := label.new(chart.point.new(labelTime,na,labelPrice),tag,xloc.bar_time,color=color(na),textcolor=labelColor,style = labelStyle,size = size.small)
 
@@ -394,12 +401,21 @@ drawEqualHighLow(pivot p_ivot, float level, int size, bool equalHigh) =>
         labelStyle  := label.style_label_down
 
     if modeInput == PRESENT
-        line.delete(    e_qualDisplay.l_ine)
-        label.delete(   e_qualDisplay.l_abel)
+        if not na(e_qualDisplay.l_ine)
+            line.delete(e_qualDisplay.l_ine)
+        if not na(e_qualDisplay.l_abel)
+            label.delete(e_qualDisplay.l_abel)
         
     e_qualDisplay.l_ine     := line.new(chart.point.new(p_ivot.barTime,na,p_ivot.currentLevel), chart.point.new(time[size],na,level), xloc = xloc.bar_time, color = equalColor, style = line.style_dotted)
     labelPosition           = math.round(0.5*(p_ivot.barIndex + bar_index - size))
     e_qualDisplay.l_abel    := label.new(chart.point.new(na,labelPosition,level), tag, xloc.bar_index, color = color(na), textcolor = equalColor, style = labelStyle, size = equalHighsLowsSizeInput)
+    
+    // Set alerts for equal highs/lows
+    if equalHigh
+        currentAlerts.equalHighs := true
+    else
+        currentAlerts.equalLows := true
+    
     0.0
 
 // @function            store current structure and trailing swing points, and also display swing points and equal highs/lows
@@ -468,8 +484,10 @@ drawStructure(pivot p_ivot, string tag, color structureColor, string lineStyle, 
     var label l_abel    = label.new(na,na)
 
     if modeInput == PRESENT
-        l_ine.delete()
-        l_abel.delete()
+        if not na(l_ine)
+            l_ine.delete()
+        if not na(l_abel)
+            l_abel.delete()
 
     l_ine   := line.new(chart.point.new(p_ivot.barTime,na,p_ivot.currentLevel), chart.point.new(time,na,p_ivot.currentLevel), xloc.bar_time, color=structureColor, style=lineStyle)
     l_abel  := label.new(chart.point.new(na,math.round(0.5*(p_ivot.barIndex+bar_index)),p_ivot.currentLevel), tag, xloc.bar_index, color=color(na), textcolor=structureColor, style=labelStyle, size = labelSize)
@@ -481,23 +499,26 @@ drawStructure(pivot p_ivot, string tag, color structureColor, string lineStyle, 
 deleteOrderBlocks(bool internal = false) =>
     array<orderBlock> orderBlocks = internal ? internalOrderBlocks : swingOrderBlocks
 
-    for [index,eachOrderBlock] in orderBlocks
-        bool crossedOderBlock = false
-        
-        if bearishOrderBlockMitigationSource > eachOrderBlock.barHigh and eachOrderBlock.bias == BEARISH
-            crossedOderBlock := true
-            if internal
-                currentAlerts.internalBearishOrderBlock := true
-            else
-                currentAlerts.swingBearishOrderBlock    := true
-        else if bullishOrderBlockMitigationSource < eachOrderBlock.barLow and eachOrderBlock.bias == BULLISH
-            crossedOderBlock := true
-            if internal
-                currentAlerts.internalBullishOrderBlock := true
-            else
-                currentAlerts.swingBullishOrderBlock    := true
-        if crossedOderBlock                    
-            orderBlocks.remove(index)            
+    // Iterate backwards to avoid index shift issues when removing elements
+    for index = orderBlocks.size() - 1 to 0
+        if orderBlocks.size() > index
+            eachOrderBlock = orderBlocks.get(index)
+            bool crossedOderBlock = false
+            
+            if bearishOrderBlockMitigationSource > eachOrderBlock.barHigh and eachOrderBlock.bias == BEARISH
+                crossedOderBlock := true
+                if internal
+                    currentAlerts.internalBearishOrderBlock := true
+                else
+                    currentAlerts.swingBearishOrderBlock    := true
+            else if bullishOrderBlockMitigationSource < eachOrderBlock.barLow and eachOrderBlock.bias == BULLISH
+                crossedOderBlock := true
+                if internal
+                    currentAlerts.internalBullishOrderBlock := true
+                else
+                    currentAlerts.swingBullishOrderBlock    := true
+            if crossedOderBlock                    
+                orderBlocks.remove(index)            
 
 // @function            fetch and store order blocks
 // @param p_ivot        base pivot point
@@ -553,8 +574,10 @@ displayStructure(bool internal = false) =>
     var bearishBar = true
 
     if internalFilterConfluenceInput
-        bullishBar := high - math.max(close, open) > math.min(close, open - low)
-        bearishBar := high - math.max(close, open) < math.min(close, open - low)
+        upperWick = high - math.max(close, open)
+        lowerWick = math.min(close, open) - low
+        bullishBar := upperWick > lowerWick
+        bearishBar := upperWick < lowerWick
     
     pivot p_ivot    = internal ? internalHigh : swingHigh
     trend t_rend    = internal ? internalTrend : swingTrend
@@ -623,11 +646,16 @@ fairValueGapBox(leftTime,rightTime,topPrice,bottomPrice,boxColor) => box.new(cha
 // @function            delete fair value gaps
 // @returns             fairValueGap ID
 deleteFairValueGaps() =>
-    for [index,eachFairValueGap] in fairValueGaps
-        if (low < eachFairValueGap.bottom and eachFairValueGap.bias == BULLISH) or (high > eachFairValueGap.top and eachFairValueGap.bias == BEARISH)
-            eachFairValueGap.topBox.delete()
-            eachFairValueGap.bottomBox.delete()
-            fairValueGaps.remove(index)
+    // Iterate backwards to avoid index shift issues when removing elements
+    for index = fairValueGaps.size() - 1 to 0
+        if fairValueGaps.size() > index
+            eachFairValueGap = fairValueGaps.get(index)
+            if (low < eachFairValueGap.bottom and eachFairValueGap.bias == BULLISH) or (high > eachFairValueGap.top and eachFairValueGap.bias == BEARISH)
+                if not na(eachFairValueGap.topBox)
+                    eachFairValueGap.topBox.delete()
+                if not na(eachFairValueGap.bottomBox)
+                    eachFairValueGap.bottomBox.delete()
+                fairValueGaps.remove(index)
     
 // @function            draw fair value gaps
 // @returns             fairValueGap ID
@@ -742,7 +770,7 @@ drawHighLowSwings() =>
 // @param style         label style
 // @returns             void
 drawZone(float labelLevel, int labelIndex, float top, float bottom, string tag, color zoneColor, string style) =>
-    var label l_abel    = label.new(na,na,text = tag, color=color(na),textcolor = zoneColor, style = style, size = size.small)
+    var label l_abel    = label.new(na,na,text = tag, color=color(na),textcolor = zoneColor, style = style, size = size.small, xloc = xloc.bar_index)
     var box b_ox        = box.new(na,na,na,na,bgcolor = color.new(zoneColor,80),border_color = color(na), xloc = xloc.bar_time)
 
     b_ox.set_top_left_point(    chart.point.new(trailing.barTime,na,top))
@@ -763,19 +791,6 @@ drawPremiumDiscountZones() =>
 //---------------------------------------------------------------------------------------------------------------------}
 //MUTABLE VARIABLES & EXECUTION
 //---------------------------------------------------------------------------------------------------------------------{
-parsedOpen  = showTrendInput ? open : na
-candleColor = internalTrend.bias == BULLISH ? swingBullishColor : swingBearishColor
-plotcandle(parsedOpen,high,low,close,color = candleColor, wickcolor = candleColor, bordercolor = candleColor)
-
-if showHighLowSwingsInput or showPremiumDiscountZonesInput
-    updateTrailingExtremes()
-
-    if showHighLowSwingsInput
-        drawHighLowSwings()
-
-    if showPremiumDiscountZonesInput
-        drawPremiumDiscountZones()
-
 if showFairValueGapsInput
     deleteFairValueGaps()
 
@@ -790,6 +805,20 @@ if showInternalsInput or showInternalOrderBlocksInput or showTrendInput
 
 if showStructureInput or showSwingOrderBlocksInput or showHighLowSwingsInput
     displayStructure()
+
+// Now that structures and trends are updated, handle candle coloring
+parsedOpen  = showTrendInput ? open : na
+candleColor = internalTrend.bias == BULLISH ? swingBullishColor : swingBearishColor
+plotcandle(parsedOpen,high,low,close,color = candleColor, wickcolor = candleColor, bordercolor = candleColor)
+
+if showHighLowSwingsInput or showPremiumDiscountZonesInput
+    updateTrailingExtremes()
+
+    if showHighLowSwingsInput
+        drawHighLowSwings()
+
+    if showPremiumDiscountZonesInput
+        drawPremiumDiscountZones()
 
 if showInternalOrderBlocksInput
     deleteOrderBlocks(true)
@@ -829,8 +858,8 @@ alertcondition(currentAlerts.internalBullishCHoCH,      'Internal Bullish CHoCH'
 alertcondition(currentAlerts.internalBearishBOS,        'Internal Bearish BOS',         'Internal Bearish BOS formed')
 alertcondition(currentAlerts.internalBearishCHoCH,      'Internal Bearish CHoCH',       'Internal Bearish CHoCH formed')
 
-alertcondition(currentAlerts.swingBullishBOS,           'Bullish BOS',                  'Internal Bullish BOS formed')
-alertcondition(currentAlerts.swingBullishCHoCH,         'Bullish CHoCH',                'Internal Bullish CHoCH formed')
+alertcondition(currentAlerts.swingBullishBOS,           'Bullish BOS',                  'Bullish BOS formed')
+alertcondition(currentAlerts.swingBullishCHoCH,         'Bullish CHoCH',                'Bullish CHoCH formed')
 alertcondition(currentAlerts.swingBearishBOS,           'Bearish BOS',                  'Bearish BOS formed')
 alertcondition(currentAlerts.swingBearishCHoCH,         'Bearish CHoCH',                'Bearish CHoCH formed')
 
