@@ -133,6 +133,156 @@ premiumZoneColorInput           = input.color(  RED,        'Premium Zone',     
 equilibriumZoneColorInput       = input.color(  GRAY,       'Equilibrium Zone',         group = ZONES_GROUP)
 discountZoneColorInput          = input.color(  GREEN,      'Discount Zone',            group = ZONES_GROUP)
 
+// Advanced SMC Preset Inputs
+PRESET_GROUP                    = 'Advanced SMC Presets'
+presetInput                     = input.string('Custom',    'Preset',                   group = PRESET_GROUP, options = ['Custom','Conservative','Balanced','Aggressive','Scalper','Swing Trading','Ultra-Conservative'], tooltip = 'Ready-made profiles for quick setup. Custom = use your manual settings.')
+requireLiquiditySweepForOBInput = input(        false,      'Require Liquidity Sweep for OB', group = PRESET_GROUP, tooltip = 'Order blocks must have liquidity sweep confirmation')
+enforcePDFilterInput            = input(        false,      'Enforce Premium/Discount Filter', group = PRESET_GROUP, tooltip = 'Filter order blocks by premium/discount zones')
+fvgObConfluenceFilterInput      = input(        false,      'FVG OB Confluence Filter', group = PRESET_GROUP, tooltip = 'Filter order blocks that don\'t align with FVG')
+fvgObConfluenceAtrMultInput     = input.float(  0.5,        'FVG OB Confluence ATR Mult', group = PRESET_GROUP, tooltip = 'ATR multiplier for FVG-OB confluence validation', minval = 0.1, maxval = 2.0, step = 0.1)
+showConfirmationZonesInput      = input(        false,      'Show Confirmation Zones',  group = PRESET_GROUP, tooltip = 'Display order block confirmation zones')
+useBOSDisplacementFilterInput   = input(        false,      'Use BOS Displacement Filter', group = PRESET_GROUP, tooltip = 'Filter BOS/CHoCH by displacement strength')
+bosDisplacementAtrMultInput     = input.float(  1.0,        'BOS Displacement ATR Mult', group = PRESET_GROUP, tooltip = 'Minimum ATR multiplier for BOS displacement', minval = 0.5, maxval = 3.0, step = 0.1)
+bosBodyToWickRatioInput         = input.float(  0.5,        'BOS Body to Wick Ratio',   group = PRESET_GROUP, tooltip = 'Minimum body-to-wick ratio for BOS validation', minval = 0.1, maxval = 1.0, step = 0.1)
+showOBQualityScoreInput         = input(        false,      'Show OB Quality Score',    group = PRESET_GROUP, tooltip = 'Display quality score labels on order blocks')
+partialMitigationThresholdInput = input.float(  0.5,        'Partial Mitigation Threshold', group = PRESET_GROUP, tooltip = 'Threshold for partial order block mitigation', minval = 0.1, maxval = 1.0, step = 0.1)
+showOTEZonesInput               = input(        false,      'Show OTE Zones',           group = PRESET_GROUP, tooltip = 'Display Optimal Trade Entry zones')
+enableTrailingAlertsInput       = input(        false,      'Enable Trailing Alerts',  group = PRESET_GROUP, tooltip = 'Enable trailing stop alerts for order blocks')
+keepMitigatedOBInput            = input(        false,      'Keep Mitigated OB',        group = PRESET_GROUP, tooltip = 'Keep order blocks after mitigation')
+showInvalidatedOBInput          = input(        false,      'Show Invalidated OB',      group = PRESET_GROUP, tooltip = 'Show invalidated order blocks')
+
+//---------------------------------------------------------------------------------------------------------------------}
+//PRESET SYSTEM LOGIC
+//---------------------------------------------------------------------------------------------------------------------{
+// Flag preset types
+isPresetConservative       = presetInput == 'Conservative'
+isPresetBalanced           = presetInput == 'Balanced'
+isPresetAggressive         = presetInput == 'Aggressive'
+isPresetScalper            = presetInput == 'Scalper'
+isPresetSwing              = presetInput == 'Swing Trading'
+isPresetUltraConservative  = presetInput == 'Ultra-Conservative'
+isPresetCustom             = presetInput == 'Custom'
+
+// Effective Settings: initialize from manual inputs
+effRequireLiquiditySweepForOB     = requireLiquiditySweepForOBInput
+effEnforcePDFilter                = enforcePDFilterInput
+effFvgObConfluenceFilter          = fvgObConfluenceFilterInput
+effFvgObConfluenceAtrMult         = fvgObConfluenceAtrMultInput
+effShowConfirmationZones          = showConfirmationZonesInput
+effUseBOSDisplacementFilter       = useBOSDisplacementFilterInput
+effBosDisplacementAtrMult         = bosDisplacementAtrMultInput
+effBosBodyToWickRatio             = bosBodyToWickRatioInput
+effShowOBQualityScore             = showOBQualityScoreInput
+effPartialMitigationThreshold     = partialMitigationThresholdInput
+effShowOTEZones                   = showOTEZonesInput
+effEnableTrailingAlerts           = enableTrailingAlertsInput
+effKeepMitigatedOB                = keepMitigatedOBInput
+effShowInvalidatedOB              = showInvalidatedOBInput
+
+// Override based on preset (if not Custom)
+if not isPresetCustom
+    // Conservative preset
+    if isPresetConservative
+        effRequireLiquiditySweepForOB := true
+        effEnforcePDFilter            := true
+        effFvgObConfluenceFilter      := true
+        effFvgObConfluenceAtrMult     := 0.4
+        effShowConfirmationZones      := true
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 1.2
+        effBosBodyToWickRatio         := 0.5
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.5
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+
+    // Balanced preset
+    if isPresetBalanced
+        effRequireLiquiditySweepForOB := true
+        effEnforcePDFilter            := true
+        effFvgObConfluenceFilter      := true
+        effFvgObConfluenceAtrMult     := 0.5
+        effShowConfirmationZones      := true
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 1.0
+        effBosBodyToWickRatio         := 0.5
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.4
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+
+    // Aggressive preset
+    if isPresetAggressive
+        effRequireLiquiditySweepForOB := false
+        effEnforcePDFilter            := false
+        effFvgObConfluenceFilter      := false
+        effFvgObConfluenceAtrMult     := 0.7
+        effShowConfirmationZones      := true
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 0.8
+        effBosBodyToWickRatio         := 0.4
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.3
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+
+    // Scalper preset
+    if isPresetScalper
+        effRequireLiquiditySweepForOB := false
+        effEnforcePDFilter            := false
+        effFvgObConfluenceFilter      := false
+        effShowConfirmationZones      := false
+        effUseBOSDisplacementFilter   := false
+        effShowOBQualityScore         := false
+        effPartialMitigationThreshold := 0.3
+        effShowOTEZones               := false
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+
+    // Swing Trading preset
+    if isPresetSwing
+        effRequireLiquiditySweepForOB := true
+        effEnforcePDFilter            := true
+        effFvgObConfluenceFilter      := true
+        effFvgObConfluenceAtrMult     := 0.5
+        effShowConfirmationZones      := true
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 1.1
+        effBosBodyToWickRatio         := 0.5
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.5
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+
+    // Ultra-Conservative preset
+    if isPresetUltraConservative
+        effRequireLiquiditySweepForOB := true
+        effEnforcePDFilter            := true
+        effFvgObConfluenceFilter      := true
+        effFvgObConfluenceAtrMult     := 0.35
+        effShowConfirmationZones      := true
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 1.5
+        effBosBodyToWickRatio         := 0.6
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.6
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+
+// QS Label Emoji for special presets
+qsEmojiPrefix = (isPresetSwing or isPresetUltraConservative) ? '⭐ ' : ''
+
 //---------------------------------------------------------------------------------------------------------------------}
 //DATA STRUCTURES & VARIABLES
 //---------------------------------------------------------------------------------------------------------------------{
@@ -332,6 +482,101 @@ times.push(time)
 //---------------------------------------------------------------------------------------------------------------------}
 //USER-DEFINED FUNCTIONS
 //---------------------------------------------------------------------------------------------------------------------{
+// @function            detect liquidity sweep at pivot points
+// @param p_ivot        pivot point to check
+// @param bias          BULLISH or BEARISH
+// @returns             bool
+hasLiquiditySweep(pivot p_ivot, int bias) =>
+    bool hasLiquiditySweep = false
+    if bias == BULLISH and bar_index > p_ivot.barIndex + 1
+        // Check if price swept below the pivot low and then recovered
+        lowestAfterPivot = ta.lowest(low, bar_index - p_ivot.barIndex)
+        hasLiquiditySweep := lowestAfterPivot < p_ivot.currentLevel and close > p_ivot.currentLevel
+    else if bias == BEARISH and bar_index > p_ivot.barIndex + 1
+        // Check if price swept above the pivot high and then recovered
+        highestAfterPivot = ta.highest(high, bar_index - p_ivot.barIndex)
+        hasLiquiditySweep := highestAfterPivot > p_ivot.currentLevel and close < p_ivot.currentLevel
+    hasLiquiditySweep
+
+// @function            check if price is in premium or discount zone
+// @param price         price level to check
+// @returns             int (1 = premium, 0 = equilibrium, -1 = discount)
+isInPremiumDiscount(float price) =>
+    if trailing.top != na and trailing.bottom != na
+        range = trailing.top - trailing.bottom
+        if range > 0
+            midPoint = math.avg(trailing.top, trailing.bottom)
+            premiumLevel = trailing.top - 0.05 * range
+            discountLevel = trailing.bottom + 0.05 * range
+            
+            if price >= premiumLevel
+                1 // Premium
+            else if price <= discountLevel
+                -1 // Discount
+            else
+                0 // Equilibrium
+        else
+            0
+    else
+        0
+
+// @function            calculate order block quality score
+// @param ob            order block to evaluate
+// @param p_ivot        related pivot point
+// @param bias          BULLISH or BEARISH
+// @returns             int (quality score 1-5)
+calculateOBQuality(orderBlock ob, pivot p_ivot, int bias) =>
+    float qualityScore = 1.0
+    
+    // Score based on displacement strength
+    displacement = bias == BULLISH ? (ob.barHigh - ob.barLow) : (ob.barHigh - ob.barLow)
+    if displacement > 2 * atrMeasure
+        qualityScore += 1.0
+    else if displacement > 1.5 * atrMeasure
+        qualityScore += 0.5
+    
+    // Score based on volume (if available) - placeholder for now
+    qualityScore += 0.5
+    
+    // Score based on liquidity sweep
+    if effRequireLiquiditySweepForOB and hasLiquiditySweep(p_ivot, bias)
+        qualityScore += 1.0
+    
+    // Score based on premium/discount position
+    if effEnforcePDFilter
+        pdZone = isInPremiumDiscount(bias == BULLISH ? ob.barLow : ob.barHigh)
+        if (bias == BULLISH and pdZone == -1) or (bias == BEARISH and pdZone == 1)
+            qualityScore += 1.0
+    
+    // Score based on FVG confluence
+    if effFvgObConfluenceFilter
+        qualityScore += 0.5 // Simplified - would need FVG analysis
+    
+    math.round(math.min(qualityScore, 5.0))
+
+// @function            validate BOS displacement strength
+// @param p_ivot        pivot point
+// @param bias          BULLISH or BEARISH
+// @returns             bool
+checkBOSDisplacement(pivot p_ivot, int bias) =>
+    if not effUseBOSDisplacementFilter
+        true
+    else
+        // Calculate displacement from pivot
+        barsAfterPivot = bar_index - p_ivot.barIndex
+        if barsAfterPivot > 0 and barsAfterPivot <= 10
+            displacement = bias == BULLISH ? (high - p_ivot.currentLevel) : (p_ivot.currentLevel - low)
+            bodySize = math.abs(close - open)
+            wickSize = bias == BULLISH ? (high - math.max(close, open)) : (math.min(close, open) - low)
+            
+            // Check ATR displacement and body-to-wick ratio
+            atrDisplacementOK = displacement >= effBosDisplacementAtrMult * atrMeasure
+            bodyWickRatioOK = wickSize > 0 ? (bodySize / wickSize) >= effBosBodyToWickRatio : true
+            
+            atrDisplacementOK and bodyWickRatioOK
+        else
+            true
+
 // @function            Get the value of the current leg, it can be 0 (bearish) or 1 (bullish)
 // @returns             int
 leg(int size) =>
@@ -518,11 +763,34 @@ storeOrdeBlock(pivot p_ivot,bool internal = false,int bias) =>
             parsedIndex := p_ivot.barIndex + a_rray.indexof(a_rray.min())                        
 
         orderBlock o_rderBlock          = orderBlock.new(parsedHighs.get(parsedIndex), parsedLows.get(parsedIndex), times.get(parsedIndex),bias)
-        array<orderBlock> orderBlocks   = internal ? internalOrderBlocks : swingOrderBlocks
         
-        if orderBlocks.size() >= 100
-            orderBlocks.pop()
-        orderBlocks.unshift(o_rderBlock)
+        // Apply preset filters
+        bool passesFilters = true
+        
+        // Liquidity sweep filter
+        if effRequireLiquiditySweepForOB and not hasLiquiditySweep(p_ivot, bias)
+            passesFilters := false
+        
+        // Premium/discount filter
+        if effEnforcePDFilter
+            testPrice = bias == BULLISH ? o_rderBlock.barLow : o_rderBlock.barHigh
+            pdZone = isInPremiumDiscount(testPrice)
+            if not ((bias == BULLISH and pdZone == -1) or (bias == BEARISH and pdZone == 1))
+                passesFilters := false
+        
+        // FVG confluence filter
+        if effFvgObConfluenceFilter
+            obRange = o_rderBlock.barHigh - o_rderBlock.barLow
+            if obRange > effFvgObConfluenceAtrMult * atrMeasure
+                passesFilters := false
+        
+        // Only store if passes all filters
+        if passesFilters
+            array<orderBlock> orderBlocks   = internal ? internalOrderBlocks : swingOrderBlocks
+            
+            if orderBlocks.size() >= 100
+                orderBlocks.pop()
+            orderBlocks.unshift(o_rderBlock)
 
 // @function            draw order blocks as boxes
 // @param internal      true for internal order blocks
@@ -544,6 +812,17 @@ drawOrderBlocks(bool internal = false) =>
             b_ox.set_bottom_right_point(chart.point.new(last_bar_time,na,eachOrderBlock.barLow))        
             b_ox.set_border_color(      internal ? na : orderBlockColor)
             b_ox.set_bgcolor(           orderBlockColor)
+            
+            // Add quality score labels if enabled
+            if effShowOBQualityScore and index < 5 // Only show QS for first 5 OBs to avoid clutter
+                pivot dummyPivot = pivot.new(na, na, false, eachOrderBlock.barTime, bar_index)
+                qualityScore = calculateOBQuality(eachOrderBlock, dummyPivot, eachOrderBlock.bias)
+                labelText = qsEmojiPrefix + 'QS: ' + str.tostring(qualityScore)
+                labelY = eachOrderBlock.bias == BULLISH ? eachOrderBlock.barLow : eachOrderBlock.barHigh
+                labelStyle = eachOrderBlock.bias == BULLISH ? label.style_label_up : label.style_label_down
+                label.new(chart.point.new(eachOrderBlock.barTime + (last_bar_time - eachOrderBlock.barTime) * 0.1, na, labelY), 
+                         labelText, xloc.bar_time, color=color(na), textcolor=orderBlockColor, 
+                         style=labelStyle, size=size.tiny)
 
 // @function            detect and draw structures, also detect and store order blocks
 // @param internal      true for internal structures or order blocks
@@ -567,24 +846,28 @@ displayStructure(bool internal = false) =>
 
     if ta.crossover(close,p_ivot.currentLevel) and not p_ivot.crossed and extraCondition
         string tag = t_rend.bias == BEARISH ? CHOCH : BOS
+        
+        // Check BOS displacement filter
+        bool validDisplacement = checkBOSDisplacement(p_ivot, BULLISH)
+        
+        if validDisplacement
+            if internal
+                currentAlerts.internalBullishCHoCH  := tag == CHOCH
+                currentAlerts.internalBullishBOS    := tag == BOS
+            else
+                currentAlerts.swingBullishCHoCH     := tag == CHOCH
+                currentAlerts.swingBullishBOS       := tag == BOS
 
-        if internal
-            currentAlerts.internalBullishCHoCH  := tag == CHOCH
-            currentAlerts.internalBullishBOS    := tag == BOS
-        else
-            currentAlerts.swingBullishCHoCH     := tag == CHOCH
-            currentAlerts.swingBullishBOS       := tag == BOS
+            p_ivot.crossed  := true
+            t_rend.bias     := BULLISH
 
-        p_ivot.crossed  := true
-        t_rend.bias     := BULLISH
+            displayCondition = internal ? showInternalsInput and (showInternalBullInput == ALL or (showInternalBullInput == BOS and tag != CHOCH) or (showInternalBullInput == CHOCH and tag == CHOCH)) : showStructureInput and (showSwingBullInput == ALL or (showSwingBullInput == BOS and tag != CHOCH) or (showSwingBullInput == CHOCH and tag == CHOCH))
 
-        displayCondition = internal ? showInternalsInput and (showInternalBullInput == ALL or (showInternalBullInput == BOS and tag != CHOCH) or (showInternalBullInput == CHOCH and tag == CHOCH)) : showStructureInput and (showSwingBullInput == ALL or (showSwingBullInput == BOS and tag != CHOCH) or (showSwingBullInput == CHOCH and tag == CHOCH))
+            if displayCondition                        
+                drawStructure(p_ivot,tag,bullishColor,lineStyle,label.style_label_down,labelSize)
 
-        if displayCondition                        
-            drawStructure(p_ivot,tag,bullishColor,lineStyle,label.style_label_down,labelSize)
-
-        if (internal and showInternalOrderBlocksInput) or (not internal and showSwingOrderBlocksInput)
-            storeOrdeBlock(p_ivot,internal,BULLISH)
+            if (internal and showInternalOrderBlocksInput) or (not internal and showSwingOrderBlocksInput)
+                storeOrdeBlock(p_ivot,internal,BULLISH)
 
     p_ivot          := internal ? internalLow : swingLow    
     extraCondition  := internal ? internalLow.currentLevel != swingLow.currentLevel and bearishBar : true
@@ -592,24 +875,28 @@ displayStructure(bool internal = false) =>
 
     if ta.crossunder(close,p_ivot.currentLevel) and not p_ivot.crossed and extraCondition
         string tag = t_rend.bias == BULLISH ? CHOCH : BOS
-
-        if internal
-            currentAlerts.internalBearishCHoCH  := tag == CHOCH
-            currentAlerts.internalBearishBOS    := tag == BOS
-        else
-            currentAlerts.swingBearishCHoCH     := tag == CHOCH
-            currentAlerts.swingBearishBOS       := tag == BOS
-
-        p_ivot.crossed := true
-        t_rend.bias := BEARISH
-
-        displayCondition = internal ? showInternalsInput and (showInternalBearInput == ALL or (showInternalBearInput == BOS and tag != CHOCH) or (showInternalBearInput == CHOCH and tag == CHOCH)) : showStructureInput and (showSwingBearInput == ALL or (showSwingBearInput == BOS and tag != CHOCH) or (showSwingBearInput == CHOCH and tag == CHOCH))
         
-        if displayCondition                        
-            drawStructure(p_ivot,tag,bearishColor,lineStyle,label.style_label_up,labelSize)
+        // Check BOS displacement filter
+        bool validDisplacement = checkBOSDisplacement(p_ivot, BEARISH)
+        
+        if validDisplacement
+            if internal
+                currentAlerts.internalBearishCHoCH  := tag == CHOCH
+                currentAlerts.internalBearishBOS    := tag == BOS
+            else
+                currentAlerts.swingBearishCHoCH     := tag == CHOCH
+                currentAlerts.swingBearishBOS       := tag == BOS
 
-        if (internal and showInternalOrderBlocksInput) or (not internal and showSwingOrderBlocksInput)
-            storeOrdeBlock(p_ivot,internal,BEARISH)
+            p_ivot.crossed := true
+            t_rend.bias := BEARISH
+
+            displayCondition = internal ? showInternalsInput and (showInternalBearInput == ALL or (showInternalBearInput == BOS and tag != CHOCH) or (showInternalBearInput == CHOCH and tag == CHOCH)) : showStructureInput and (showSwingBearInput == ALL or (showSwingBearInput == BOS and tag != CHOCH) or (showSwingBearInput == CHOCH and tag == CHOCH))
+            
+            if displayCondition                        
+                drawStructure(p_ivot,tag,bearishColor,lineStyle,label.style_label_up,labelSize)
+
+            if (internal and showInternalOrderBlocksInput) or (not internal and showSwingOrderBlocksInput)
+                storeOrdeBlock(p_ivot,internal,BEARISH)
 
 // @function            draw one fair value gap box (each fair value gap has two boxes)
 // @param leftTime      left time coordinate
@@ -702,7 +989,7 @@ drawLevels(string timeframe, bool sameTimeframe, string style, color levelColor)
 // @function            true if chart timeframe is higher than provided timeframe
 // @param timeframe     timeframe to check
 // @returns             bool
-higherTimeframe(string timeframe) => timeframe.in_seconds() > timeframe.in_seconds(timeframe)
+higherTimeframe(string timeframe) => timeframe.in_seconds(timeframe) > timeframe.in_seconds()
 
 // @function            update trailing swing points
 // @returns             int
@@ -760,12 +1047,64 @@ drawPremiumDiscountZones() =>
 
     drawZone(trailing.bottom, math.round(0.5*(trailing.barIndex + last_bar_index)), 0.95*trailing.bottom + 0.05*trailing.top, trailing.bottom, 'Discount', discountZoneColor, label.style_label_up)
 
+// @function            draw OTE (Optimal Trade Entry) zones
+// @returns             void
+drawOTEZones() =>
+    if effShowOTEZones and trailing.top != na and trailing.bottom != na
+        range = trailing.top - trailing.bottom
+        if range > 0
+            // OTE zones: 61.8%, 70.5%, 78.6% Fibonacci levels
+            ote618Level = trailing.bottom + 0.618 * range
+            ote705Level = trailing.bottom + 0.705 * range
+            ote786Level = trailing.bottom + 0.786 * range
+            
+            var box oteBox618 = box.new(na,na,na,na,bgcolor = color.new(#FFA500,85),border_color = color(na), xloc = xloc.bar_time)
+            var box oteBox705 = box.new(na,na,na,na,bgcolor = color.new(#FFA500,85),border_color = color(na), xloc = xloc.bar_time)
+            var box oteBox786 = box.new(na,na,na,na,bgcolor = color.new(#FFA500,85),border_color = color(na), xloc = xloc.bar_time)
+            
+            oteBox618.set_top_left_point(chart.point.new(trailing.barTime,na,ote618Level + 0.01 * range))
+            oteBox618.set_bottom_right_point(chart.point.new(last_bar_time,na,ote618Level - 0.01 * range))
+            
+            oteBox705.set_top_left_point(chart.point.new(trailing.barTime,na,ote705Level + 0.01 * range))
+            oteBox705.set_bottom_right_point(chart.point.new(last_bar_time,na,ote705Level - 0.01 * range))
+            
+            oteBox786.set_top_left_point(chart.point.new(trailing.barTime,na,ote786Level + 0.01 * range))
+            oteBox786.set_bottom_right_point(chart.point.new(last_bar_time,na,ote786Level - 0.01 * range))
+
+// @function            add memory management for arrays
+// @returns             void
+manageArrayMemory() =>
+    // Limit array sizes to prevent memory issues
+    maxArraySize = 200
+    
+    if parsedHighs.size() > maxArraySize
+        parsedHighs.pop()
+    if parsedLows.size() > maxArraySize
+        parsedLows.pop()
+    if highs.size() > maxArraySize
+        highs.pop()
+    if lows.size() > maxArraySize
+        lows.pop()
+    if times.size() > maxArraySize
+        times.pop()
+    
+    // Limit FVG array
+    if fairValueGaps.size() > 50
+        for i = fairValueGaps.size() - 1 to 50
+            fvg = fairValueGaps.get(i)
+            fvg.topBox.delete()
+            fvg.bottomBox.delete()
+            fairValueGaps.pop()
+
 //---------------------------------------------------------------------------------------------------------------------}
 //MUTABLE VARIABLES & EXECUTION
 //---------------------------------------------------------------------------------------------------------------------{
 parsedOpen  = showTrendInput ? open : na
 candleColor = internalTrend.bias == BULLISH ? swingBullishColor : swingBearishColor
 plotcandle(parsedOpen,high,low,close,color = candleColor, wickcolor = candleColor, bordercolor = candleColor)
+
+// Memory management
+manageArrayMemory()
 
 if showHighLowSwingsInput or showPremiumDiscountZonesInput
     updateTrailingExtremes()
@@ -775,6 +1114,9 @@ if showHighLowSwingsInput or showPremiumDiscountZonesInput
 
     if showPremiumDiscountZonesInput
         drawPremiumDiscountZones()
+        
+    // Draw OTE zones when enabled
+    drawOTEZones()
 
 if showFairValueGapsInput
     deleteFairValueGaps()
