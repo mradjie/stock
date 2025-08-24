@@ -144,17 +144,17 @@ effBosBodyToWickRatio             = bosBodyToWickRatioInput
 effShowOBQualityScore             = showOBQualityScoreInput
 
 // Apply preset settings
-effRequireLiquiditySweepForOB := isPresetConservative ? true : isPresetBalanced ? true : isPresetAggressive ? false : isPresetUltraConservative ? true : isPresetScalper ? false : requireLiquiditySweepForOBInput
+effRequireLiquiditySweepForOB := isPresetConservative ? true : isPresetBalanced ? true : isPresetAggressive ? false : isPresetSwing ? true : isPresetUltraConservative ? true : isPresetScalper ? false : requireLiquiditySweepForOBInput
 
-effEnforcePDFilter := isPresetConservative ? true : isPresetBalanced ? true : isPresetAggressive ? false : isPresetUltraConservative ? true : isPresetScalper ? false : enforcePDFilterInput
+effEnforcePDFilter := isPresetConservative ? true : isPresetBalanced ? true : isPresetAggressive ? false : isPresetSwing ? true : isPresetUltraConservative ? true : isPresetScalper ? false : enforcePDFilterInput
 
-effUseBOSDisplacementFilter := isPresetConservative ? true : isPresetBalanced ? true : isPresetAggressive ? true : isPresetUltraConservative ? true : isPresetScalper ? false : useBOSDisplacementFilterInput
+effUseBOSDisplacementFilter := isPresetConservative ? true : isPresetBalanced ? true : isPresetAggressive ? true : isPresetSwing ? true : isPresetUltraConservative ? true : isPresetScalper ? false : useBOSDisplacementFilterInput
 
-effBosDisplacementAtrMult := isPresetConservative ? 1.2 : isPresetBalanced ? 1.0 : isPresetAggressive ? 0.8 : isPresetUltraConservative ? 1.5 : isPresetScalper ? 0.8 : bosDisplacementAtrMultInput
+effBosDisplacementAtrMult := isPresetConservative ? 1.2 : isPresetBalanced ? 1.0 : isPresetAggressive ? 0.8 : isPresetSwing ? 1.1 : isPresetUltraConservative ? 1.5 : isPresetScalper ? 0.8 : bosDisplacementAtrMultInput
 
-effBosBodyToWickRatio := isPresetConservative ? 0.5 : isPresetBalanced ? 0.5 : isPresetAggressive ? 0.4 : isPresetUltraConservative ? 0.6 : isPresetScalper ? 0.4 : bosBodyToWickRatioInput
+effBosBodyToWickRatio := isPresetConservative ? 0.5 : isPresetBalanced ? 0.5 : isPresetAggressive ? 0.4 : isPresetSwing ? 0.5 : isPresetUltraConservative ? 0.6 : isPresetScalper ? 0.4 : bosBodyToWickRatioInput
 
-effShowOBQualityScore := isPresetConservative ? true : isPresetBalanced ? true : isPresetAggressive ? true : isPresetUltraConservative ? true : isPresetScalper ? false : showOBQualityScoreInput
+effShowOBQualityScore := isPresetConservative ? true : isPresetBalanced ? true : isPresetAggressive ? true : isPresetSwing ? true : isPresetUltraConservative ? true : isPresetScalper ? false : showOBQualityScoreInput
 
 // QS Emoji prefix for special presets
 qsEmojiPrefix = (isPresetSwing or isPresetUltraConservative) ? "⭐ " : ""
