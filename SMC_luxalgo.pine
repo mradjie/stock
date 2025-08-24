@@ -2,7 +2,7 @@
 // © LuxAlgo
 
 //@version=5
-indicator('SMC Advanced', 'Smart Money OK', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)
+indicator('SMC Advanced', 'SMC v2.0', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)
 //---------------------------------------------------------------------------------------------------------------------}
 //CONSTANTS & STRINGS & INPUTS
 //---------------------------------------------------------------------------------------------------------------------{
@@ -159,13 +159,7 @@ showInvalidatedOBInput             = input(        false,      'Show Invalidated
 var string PRESET_GROUP = "Advanced SMC Presets"
 
 // Tambahkan opsi "Swing Trading" & "Ultra-Conservative"
-presetInput = input.string(
-     defval  = "Custom",
-     title   = "Preset",
-     options = ["Custom","Conservative","Balanced","Aggressive","Scalper","Swing Trading","Ultra-Conservative"],
-     group   = PRESET_GROUP,
-     tooltip = "Profil siap pakai untuk mempercepat on/off toggle. Custom = gunakan pengaturan manual Anda."
-)
+presetInput = input.string(title="Preset", defval="Custom", options=["Custom","Conservative","Balanced","Aggressive","Scalper","Swing Trading","Ultra-Conservative"], group=PRESET_GROUP, tooltip="Profil siap pakai untuk mempercepat on/off toggle. Custom = gunakan pengaturan manual Anda.")
 
 // Flag preset
 isPresetConservative       = presetInput == "Conservative"
