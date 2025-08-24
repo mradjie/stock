@@ -144,17 +144,17 @@ effBosBodyToWickRatio             = bosBodyToWickRatioInput
 effShowOBQualityScore             = showOBQualityScoreInput
 
 // Apply preset settings
-effRequireLiquiditySweepForOB := isPresetConservative ? true : isPresetBalanced ? true : isPresetAggressive ? false : isPresetUltraConservative ? true : isPresetScalper ? false : effRequireLiquiditySweepForOB
+effRequireLiquiditySweepForOB := isPresetConservative ? true : isPresetBalanced ? true : isPresetAggressive ? false : isPresetUltraConservative ? true : isPresetScalper ? false : requireLiquiditySweepForOBInput
 
-effEnforcePDFilter := isPresetConservative ? true : isPresetBalanced ? true : isPresetAggressive ? false : isPresetUltraConservative ? true : isPresetScalper ? false : effEnforcePDFilter
+effEnforcePDFilter := isPresetConservative ? true : isPresetBalanced ? true : isPresetAggressive ? false : isPresetUltraConservative ? true : isPresetScalper ? false : enforcePDFilterInput
 
-effUseBOSDisplacementFilter := isPresetConservative ? true : isPresetBalanced ? true : isPresetAggressive ? true : isPresetUltraConservative ? true : isPresetScalper ? false : effUseBOSDisplacementFilter
+effUseBOSDisplacementFilter := isPresetConservative ? true : isPresetBalanced ? true : isPresetAggressive ? true : isPresetUltraConservative ? true : isPresetScalper ? false : useBOSDisplacementFilterInput
 
-effBosDisplacementAtrMult := isPresetConservative ? 1.2 : isPresetBalanced ? 1.0 : isPresetAggressive ? 0.8 : isPresetUltraConservative ? 1.5 : isPresetScalper ? 0.8 : effBosDisplacementAtrMult
+effBosDisplacementAtrMult := isPresetConservative ? 1.2 : isPresetBalanced ? 1.0 : isPresetAggressive ? 0.8 : isPresetUltraConservative ? 1.5 : isPresetScalper ? 0.8 : bosDisplacementAtrMultInput
 
-effBosBodyToWickRatio := isPresetConservative ? 0.5 : isPresetBalanced ? 0.5 : isPresetAggressive ? 0.4 : isPresetUltraConservative ? 0.6 : isPresetScalper ? 0.4 : effBosBodyToWickRatio
+effBosBodyToWickRatio := isPresetConservative ? 0.5 : isPresetBalanced ? 0.5 : isPresetAggressive ? 0.4 : isPresetUltraConservative ? 0.6 : isPresetScalper ? 0.4 : bosBodyToWickRatioInput
 
-effShowOBQualityScore := isPresetConservative ? true : isPresetBalanced ? true : isPresetAggressive ? true : isPresetUltraConservative ? true : isPresetScalper ? false : effShowOBQualityScore
+effShowOBQualityScore := isPresetConservative ? true : isPresetBalanced ? true : isPresetAggressive ? true : isPresetUltraConservative ? true : isPresetScalper ? false : showOBQualityScoreInput
 
 // QS Emoji prefix for special presets
 qsEmojiPrefix = (isPresetSwing or isPresetUltraConservative) ? "⭐ " : ""
@@ -446,16 +446,16 @@ isInPremiumDiscount(float currentPrice = close, float swingHigh = na, float swin
     string zone = "Equilibrium"
     
     // Use trailing extremes if swing levels not provided
-    high_level = na(swingHigh) ? trailing.top : swingHigh
-    low_level = na(swingLow) ? trailing.bottom : swingLow
+    highLevel = na(swingHigh) ? trailing.top : swingHigh
+    lowLevel = na(swingLow) ? trailing.bottom : swingLow
     
-    if not na(high_level) and not na(low_level)
-        range_size = high_level - low_level
-        price_position = (currentPrice - low_level) / range_size
+    if not na(highLevel) and not na(lowLevel)
+        rangeSize = highLevel - lowLevel
+        pricePosition = (currentPrice - lowLevel) / rangeSize
         
-        if price_position >= 0.70
+        if pricePosition >= 0.70
             zone := "Premium"
-        else if price_position <= 0.30
+        else if pricePosition <= 0.30
             zone := "Discount"
         else
             zone := "Equilibrium"
@@ -1052,7 +1052,7 @@ if showEqualHighsLowsInput
     getCurrentStructure(equalHighsLowsLengthInput,true)
 
 // Check for liquidity sweeps and update alerts
-if requireLiquiditySweepForOBInput or true  // Always check for alerts
+if effRequireLiquiditySweepForOB or true  // Always check for alerts
     if hasLiquiditySweep()
         // Determine sweep direction
         if close > open
