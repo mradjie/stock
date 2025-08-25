@@ -332,13 +332,13 @@ if barstate.isfirst
     if showSwingOrderBlocksInput
         for index = 1 to swingOrderBlocksSizeInput
             swingOrderBlocksBoxes.push(box.new(na,na,na,na,xloc = xloc.bar_time,extend = extend.right))
-            if showConfirmationZonesInput
-                swingOrderBlocksConfirmationBoxes.push(box.new(na,na,na,na,xloc = xloc.bar_time))
+            // Always create confirmation boxes for potential use
+            swingOrderBlocksConfirmationBoxes.push(box.new(na,na,na,na,xloc = xloc.bar_time))
     if showInternalOrderBlocksInput
         for index = 1 to internalOrderBlocksSizeInput
             internalOrderBlocksBoxes.push(box.new(na,na,na,na,xloc = xloc.bar_time,extend = extend.right))
-            if showConfirmationZonesInput
-                internalOrderBlocksConfirmationBoxes.push(box.new(na,na,na,na,xloc = xloc.bar_time))
+            // Always create confirmation boxes for potential use
+            internalOrderBlocksConfirmationBoxes.push(box.new(na,na,na,na,xloc = xloc.bar_time))
 
 // @variable                        source to use in bearish order blocks mitigation
 bearishOrderBlockMitigationSource   = orderBlockMitigationInput == CLOSE ? close : high
@@ -635,7 +635,7 @@ advancedUpdateOrderBlocks(bool internal = false) =>
 // @param internal      true for internal order blocks
 // @param bias          BULLISH or BEARISH
 // @returns             void
-storeOrdeBlock(pivot p_ivot,bool internal = false,int bias) =>
+storeOrderBlock(pivot p_ivot,bool internal = false,int bias) =>
     if (not internal and showSwingOrderBlocksInput) or (internal and showInternalOrderBlocksInput)
 
         array<float> a_rray = na
@@ -706,7 +706,7 @@ drawOrderBlocks(bool internal = false) =>
                     PARTIAL   => "PARTIAL"
                     MITIGATED => "MITIGATED"
                     INVALID   => "INVALID"
-                    => "UNKNOWN"
+                    * => "UNKNOWN"
                 
                 // Add mitigation depth info for partial/mitigated blocks
                 if eachOrderBlock.status == PARTIAL or eachOrderBlock.status == MITIGATED
@@ -761,7 +761,7 @@ displayStructure(bool internal = false) =>
             drawStructure(p_ivot,tag,bullishColor,lineStyle,label.style_label_down,labelSize)
 
         if (internal and showInternalOrderBlocksInput) or (not internal and showSwingOrderBlocksInput)
-            storeOrdeBlock(p_ivot,internal,BULLISH)
+            storeOrderBlock(p_ivot,internal,BULLISH)
 
     p_ivot          := internal ? internalLow : swingLow    
     extraCondition  := internal ? internalLow.currentLevel != swingLow.currentLevel and bearishBar : true
@@ -786,7 +786,7 @@ displayStructure(bool internal = false) =>
             drawStructure(p_ivot,tag,bearishColor,lineStyle,label.style_label_up,labelSize)
 
         if (internal and showInternalOrderBlocksInput) or (not internal and showSwingOrderBlocksInput)
-            storeOrdeBlock(p_ivot,internal,BEARISH)
+            storeOrderBlock(p_ivot,internal,BEARISH)
 
 // @function            draw one fair value gap box (each fair value gap has two boxes)
 // @param leftTime      left time coordinate
