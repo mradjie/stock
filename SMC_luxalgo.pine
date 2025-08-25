@@ -12,6 +12,12 @@ BEARISH_LEG                     = 0
 BULLISH                         = +1
 BEARISH                         = -1
 
+// Status-Based Mitigation System Constants
+ACTIVE                          = 0
+PARTIAL                         = 1
+MITIGATED                       = 2
+INVALID                         = 3
+
 GREEN                           = #089981
 RED                             = #F23645
 BLUE                            = #2157f3
@@ -101,6 +107,13 @@ showSwingOrderBlocksInput       = input(        false,      'Swing Order Blocks'
 swingOrderBlocksSizeInput       = input.int(    5,          '',                         group = BLOCKS_GROUP,   minval = 1, maxval = 20,                    inline = 'ob') 
 orderBlockFilterInput           = input.string( 'Atr',      'Order Block Filter',       group = BLOCKS_GROUP,   tooltip = orderBlockFilterTooltip,          options = [ATR, RANGE])
 orderBlockMitigationInput       = input.string( HIGHLOW,    'Order Block Mitigation',   group = BLOCKS_GROUP,   tooltip = orderBlockMitigationTooltip,      options = [CLOSE,HIGHLOW])
+partialMitigationThresholdInput = input.float(  0.5,        'Partial Mitigation Threshold', group = BLOCKS_GROUP, tooltip = 'Threshold (0-1) for partial mitigation status', minval = 0.1, maxval = 0.9, step = 0.1)
+enableStatusBasedSystemInput    = input.bool(   true,       'Enable Status-Based System', group = BLOCKS_GROUP, tooltip = 'Enable advanced status tracking instead of deletion-based system')
+showConfirmationZonesInput      = input.bool(   true,       'Show Confirmation Zones',  group = BLOCKS_GROUP, tooltip = 'Show extended zones for untouched Order Blocks')
+confirmationZoneExtensionInput  = input.int(    50,         'Confirmation Zone Extension', group = BLOCKS_GROUP, tooltip = 'Number of bars to extend confirmation zones', minval = 10, maxval = 200)
+confirmationZoneOpacityInput    = input.int(    85,         'Confirmation Zone Opacity', group = BLOCKS_GROUP, tooltip = 'Opacity for confirmation zones (0-100)', minval = 0, maxval = 100)
+keepMitigatedOBInput            = input.bool(   false,      'Keep Mitigated OBs Visible', group = BLOCKS_GROUP, tooltip = 'Show mitigated order blocks with reduced opacity')
+showOBStatusLabelsInput         = input.bool(   true,       'Show OB Status Labels',    group = BLOCKS_GROUP, tooltip = 'Show status labels on order blocks')
 internalBullishOrderBlockColor  = input.color(color.new(#3179f5, 80), 'Internal Bullish OB',    group = BLOCKS_GROUP)
 internalBearishOrderBlockColor  = input.color(color.new(#f77c80, 80), 'Internal Bearish OB',    group = BLOCKS_GROUP)
 swingBullishOrderBlockColor     = input.color(color.new(#1848cc, 80), 'Bullish OB',             group = BLOCKS_GROUP)
@@ -229,11 +242,21 @@ type pivot
 // @field barLow                    bar low
 // @field barTime                   bar time
 // @field bias                      BULLISH or BEARISH
+// @field status                    current status: ACTIVE, PARTIAL, MITIGATED, INVALID
+// @field mitigationDepth           penetration depth from 0 to 1+
+// @field zoneEntered               true when price first enters the OB zone
+// @field entryTime                 time when price first entered the zone
+// @field partialMitigationLevel    price level for partial mitigation
 type orderBlock
     float barHigh
     float barLow
     int barTime    
     int bias
+    int status = ACTIVE
+    float mitigationDepth = 0.0
+    bool zoneEntered = false
+    int entryTime = na
+    float partialMitigationLevel = na
 
 // @variable                        current swing pivot high    
 var pivot swingHigh                 = pivot.new(na,na,false)
@@ -277,6 +300,12 @@ var array<orderBlock> internalOrderBlocks   = array.new<orderBlock>()
 var array<box> swingOrderBlocksBoxes        = array.new<box>()
 // @variable                                storage for internal order blocks boxes
 var array<box> internalOrderBlocksBoxes     = array.new<box>()
+// @variable                                storage for swing order blocks confirmation zones
+var array<box> swingOrderBlocksConfirmationBoxes = array.new<box>()
+// @variable                                storage for internal order blocks confirmation zones
+var array<box> internalOrderBlocksConfirmationBoxes = array.new<box>()
+// @variable                                storage for order block status labels
+var array<label> orderBlockStatusLabels     = array.new<label>()
 // @variable                        color for swing bullish structures
 var swingBullishColor               = styleInput == MONOCHROME ? MONO_BULLISH : swingBullColorInput
 // @variable                        color for swing bearish structures
@@ -303,9 +332,13 @@ if barstate.isfirst
     if showSwingOrderBlocksInput
         for index = 1 to swingOrderBlocksSizeInput
             swingOrderBlocksBoxes.push(box.new(na,na,na,na,xloc = xloc.bar_time,extend = extend.right))
+            if showConfirmationZonesInput
+                swingOrderBlocksConfirmationBoxes.push(box.new(na,na,na,na,xloc = xloc.bar_time))
     if showInternalOrderBlocksInput
         for index = 1 to internalOrderBlocksSizeInput
             internalOrderBlocksBoxes.push(box.new(na,na,na,na,xloc = xloc.bar_time,extend = extend.right))
+            if showConfirmationZonesInput
+                internalOrderBlocksConfirmationBoxes.push(box.new(na,na,na,na,xloc = xloc.bar_time))
 
 // @variable                        source to use in bearish order blocks mitigation
 bearishOrderBlockMitigationSource   = orderBlockMitigationInput == CLOSE ? close : high
@@ -499,6 +532,104 @@ deleteOrderBlocks(bool internal = false) =>
         if crossedOderBlock                    
             orderBlocks.remove(index)            
 
+// @function            calculate mitigation depth for order block
+// @param orderBlock    order block to analyze
+// @returns             float mitigation depth
+calculateMitigationDepth(orderBlock ob) =>
+    float depth = 0.0
+    float obRange = ob.barHigh - ob.barLow
+    
+    if ob.bias == BEARISH
+        // For bearish OB, depth is how much price has penetrated from the top
+        if high > ob.barLow
+            depth := obRange > 0 ? (high - ob.barLow) / obRange : 0.0
+    else if ob.bias == BULLISH
+        // For bullish OB, depth is how much price has penetrated from the bottom
+        if low < ob.barHigh
+            depth := obRange > 0 ? (ob.barHigh - low) / obRange : 0.0
+    
+    math.max(0.0, depth)
+
+// @function            update order block status based on price action
+// @param orderBlock    order block to update
+// @returns             void
+updateOrderBlockStatus(orderBlock ob) =>
+    if enableStatusBasedSystemInput
+        // Check if price has entered the zone for the first time
+        if not ob.zoneEntered
+            if ob.bias == BEARISH and (high >= ob.barLow and low <= ob.barHigh)
+                ob.zoneEntered := true
+                ob.entryTime := time
+            else if ob.bias == BULLISH and (low <= ob.barHigh and high >= ob.barLow)
+                ob.zoneEntered := true
+                ob.entryTime := time
+        
+        // Calculate current mitigation depth
+        currentDepth = calculateMitigationDepth(ob)
+        ob.mitigationDepth := math.max(ob.mitigationDepth, currentDepth)
+        
+        // Update status based on penetration depth
+        if ob.status == ACTIVE and ob.mitigationDepth > 0
+            ob.status := PARTIAL
+            // Set partial mitigation level
+            if na(ob.partialMitigationLevel)
+                if ob.bias == BEARISH
+                    ob.partialMitigationLevel := ob.barLow + (ob.barHigh - ob.barLow) * partialMitigationThresholdInput
+                else
+                    ob.partialMitigationLevel := ob.barHigh - (ob.barHigh - ob.barLow) * partialMitigationThresholdInput
+        
+        if ob.status == PARTIAL and ob.mitigationDepth >= partialMitigationThresholdInput
+            ob.status := MITIGATED
+        
+        // Check for invalidation (full penetration beyond threshold)
+        if ob.mitigationDepth > 1.0
+            ob.status := INVALID
+
+// @function            advanced order block management with status tracking
+// @param internal      true for internal order blocks
+// @returns             void
+advancedUpdateOrderBlocks(bool internal = false) =>
+    array<orderBlock> orderBlocks = internal ? internalOrderBlocks : swingOrderBlocks
+
+    for [index, eachOrderBlock] in orderBlocks
+        if enableStatusBasedSystemInput
+            updateOrderBlockStatus(eachOrderBlock)
+            
+            // Remove only if invalid or if not keeping mitigated OBs
+            if eachOrderBlock.status == INVALID or (eachOrderBlock.status == MITIGATED and not keepMitigatedOBInput)
+                if eachOrderBlock.status == MITIGATED
+                    // Trigger alerts for mitigated blocks
+                    if eachOrderBlock.bias == BEARISH
+                        if internal
+                            currentAlerts.internalBearishOrderBlock := true
+                        else
+                            currentAlerts.swingBearishOrderBlock := true
+                    else
+                        if internal
+                            currentAlerts.internalBullishOrderBlock := true
+                        else
+                            currentAlerts.swingBullishOrderBlock := true
+                orderBlocks.remove(index)
+        else
+            // Use legacy deletion-based system
+            bool crossedOderBlock = false
+            
+            if bearishOrderBlockMitigationSource > eachOrderBlock.barHigh and eachOrderBlock.bias == BEARISH
+                crossedOderBlock := true
+                if internal
+                    currentAlerts.internalBearishOrderBlock := true
+                else
+                    currentAlerts.swingBearishOrderBlock := true
+            else if bullishOrderBlockMitigationSource < eachOrderBlock.barLow and eachOrderBlock.bias == BULLISH
+                crossedOderBlock := true
+                if internal
+                    currentAlerts.internalBullishOrderBlock := true
+                else
+                    currentAlerts.swingBullishOrderBlock := true
+            
+            if crossedOderBlock
+                orderBlocks.remove(index)            
+
 // @function            fetch and store order blocks
 // @param p_ivot        base pivot point
 // @param internal      true for internal order blocks
@@ -524,7 +655,7 @@ storeOrdeBlock(pivot p_ivot,bool internal = false,int bias) =>
             orderBlocks.pop()
         orderBlocks.unshift(o_rderBlock)
 
-// @function            draw order blocks as boxes
+// @function            draw order blocks as boxes with advanced status visualization
 // @param internal      true for internal order blocks
 // @returns             void
 drawOrderBlocks(bool internal = false) =>        
@@ -535,15 +666,61 @@ drawOrderBlocks(bool internal = false) =>
         maxOrderBlocks                      = internal ? internalOrderBlocksSizeInput : swingOrderBlocksSizeInput
         array<orderBlock> parsedOrdeBlocks  = orderBlocks.slice(0, math.min(maxOrderBlocks,orderBlocksSize))
         array<box> b_oxes                   = internal ? internalOrderBlocksBoxes : swingOrderBlocksBoxes        
+        array<box> c_onfirmationBoxes       = internal ? internalOrderBlocksConfirmationBoxes : swingOrderBlocksConfirmationBoxes
 
         for [index,eachOrderBlock] in parsedOrdeBlocks
-            orderBlockColor = styleInput == MONOCHROME ? (eachOrderBlock.bias == BEARISH ? color.new(MONO_BEARISH,80) : color.new(MONO_BULLISH,80)) : internal ? (eachOrderBlock.bias == BEARISH ? internalBearishOrderBlockColor : internalBullishOrderBlockColor) : (eachOrderBlock.bias == BEARISH ? swingBearishOrderBlockColor : swingBullishOrderBlockColor)
-
+            // Base color selection
+            baseColor = styleInput == MONOCHROME ? (eachOrderBlock.bias == BEARISH ? color.new(MONO_BEARISH,80) : color.new(MONO_BULLISH,80)) : internal ? (eachOrderBlock.bias == BEARISH ? internalBearishOrderBlockColor : internalBullishOrderBlockColor) : (eachOrderBlock.bias == BEARISH ? swingBearishOrderBlockColor : swingBullishOrderBlockColor)
+            
+            // Adjust color based on status
+            orderBlockColor = baseColor
+            if enableStatusBasedSystemInput
+                switch eachOrderBlock.status
+                    ACTIVE   => orderBlockColor := baseColor
+                    PARTIAL  => orderBlockColor := color.new(baseColor, 90)
+                    MITIGATED => orderBlockColor := color.new(baseColor, 95)
+                    INVALID  => orderBlockColor := color.new(baseColor, 98)
+            
+            // Draw main order block
             box b_ox        = b_oxes.get(index)
             b_ox.set_top_left_point(    chart.point.new(eachOrderBlock.barTime,na,eachOrderBlock.barHigh))
             b_ox.set_bottom_right_point(chart.point.new(last_bar_time,na,eachOrderBlock.barLow))        
             b_ox.set_border_color(      internal ? na : orderBlockColor)
             b_ox.set_bgcolor(           orderBlockColor)
+            
+            // Draw confirmation zones for active, untouched order blocks
+            if showConfirmationZonesInput and enableStatusBasedSystemInput and eachOrderBlock.status == ACTIVE and index < c_onfirmationBoxes.size()
+                confirmationColor = color.new(baseColor, confirmationZoneOpacityInput)
+                extensionTime = time + confirmationZoneExtensionInput * (time - time[1])
+                
+                box c_ox = c_onfirmationBoxes.get(index)
+                c_ox.set_top_left_point(    chart.point.new(last_bar_time,na,eachOrderBlock.barHigh))
+                c_ox.set_bottom_right_point(chart.point.new(extensionTime,na,eachOrderBlock.barLow))
+                c_ox.set_border_color(      na)
+                c_ox.set_bgcolor(           confirmationColor)
+            
+            // Draw status labels
+            if showOBStatusLabelsInput and enableStatusBasedSystemInput
+                statusText = switch eachOrderBlock.status
+                    ACTIVE    => "ACTIVE"
+                    PARTIAL   => "PARTIAL"
+                    MITIGATED => "MITIGATED"
+                    INVALID   => "INVALID"
+                    => "UNKNOWN"
+                
+                // Add mitigation depth info for partial/mitigated blocks
+                if eachOrderBlock.status == PARTIAL or eachOrderBlock.status == MITIGATED
+                    depthPercent = math.round(eachOrderBlock.mitigationDepth * 100)
+                    statusText := statusText + " (" + str.tostring(depthPercent) + "%)"
+                
+                labelY = eachOrderBlock.bias == BEARISH ? eachOrderBlock.barHigh : eachOrderBlock.barLow
+                labelStyle = eachOrderBlock.bias == BEARISH ? label.style_label_down : label.style_label_up
+                labelColor = eachOrderBlock.status == ACTIVE ? color.white : color.gray
+                
+                if index < 50  // Limit labels to prevent performance issues
+                    label.new(chart.point.new(math.round(0.5 * (eachOrderBlock.barTime + last_bar_time)), na, labelY), 
+                             statusText, xloc.bar_time, color=color(na), textcolor=labelColor, 
+                             style=labelStyle, size=size.tiny)
 
 // @function            detect and draw structures, also detect and store order blocks
 // @param internal      true for internal structures or order blocks
@@ -792,10 +969,16 @@ if showStructureInput or showSwingOrderBlocksInput or showHighLowSwingsInput
     displayStructure()
 
 if showInternalOrderBlocksInput
-    deleteOrderBlocks(true)
+    if enableStatusBasedSystemInput
+        advancedUpdateOrderBlocks(true)
+    else
+        deleteOrderBlocks(true)
 
 if showSwingOrderBlocksInput
-    deleteOrderBlocks()
+    if enableStatusBasedSystemInput
+        advancedUpdateOrderBlocks()
+    else
+        deleteOrderBlocks()
 
 if showFairValueGapsInput
     drawFairValueGaps()
