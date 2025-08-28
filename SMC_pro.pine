@@ -627,7 +627,7 @@ if showOrderBlocksInput
             obBox = box.new(
                 left = ob.barTime,
                 top = ob.barHigh,
-                right = time,  // Current time instead of last_bar_time
+                right = time,  // Current time for dynamic extension
                 bottom = ob.barLow,
                 xloc = xloc.bar_time,
                 border_color = boxColor,
