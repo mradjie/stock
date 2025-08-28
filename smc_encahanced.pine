@@ -69,6 +69,7 @@ modeInput                     = input.string( HISTORICAL, 'Mode',               
 styleInput                    = input.string( COLORED,    'Style',                group = SMART_GROUP,   tooltip = styleTooltip,options = [COLORED, MONOCHROME])
 showTrendInput                = input(        false,      'Color Candles',        group = SMART_GROUP,   tooltip = showTrendTooltip)
 filterPremiumDiscountInput    = input.bool(   true,       'Filter OB by Premium/Discount', group = BLOCKS_GROUP, tooltip = 'Only show Bullish OB in Discount Zones and Bearish OB in Premium Zones. This improves signal quality.')
+confluenceScoreInput         = input.bool(   false,      'Show Confluence Score', group = BLOCKS_GROUP, tooltip = 'Display confluence score labels on order blocks')
 
 showInternalsInput            = input(        true,       'Show Internal Structure',  group = INTERNAL_GROUP, tooltip = showInternalsTooltip)
 showInternalBullInput         = input.string( ALL,        'Bullish Structure',        group = INTERNAL_GROUP, inline = 'ibull', options = [ALL,BOS,CHOCH])
@@ -183,6 +184,8 @@ type orderBlock
     int bias
     string status = 'Unmitigated'
     bool is_hp = false
+    float confluenceScore = 0.0
+    bool isHighProbability = false
 
 var pivot swingHigh = pivot.new()
 var pivot swingLow = pivot.new()
@@ -348,11 +351,32 @@ storeOrderBlock(pivot p_ivot, bool internal, int bias) =>
         arr = bias == BEARISH ? parsedHighs.slice(p_ivot.barIndex, bar_index) : parsedLows.slice(p_ivot.barIndex, bar_index)
         idx = p_ivot.barIndex + (bias == BEARISH ? arr.indexof(arr.max()) : arr.indexof(arr.min()))
         ob := orderBlock.new(parsedHighs.get(idx), parsedLows.get(idx), times.get(idx), bias)
+        
+        // Calculate confluence score
+        confluenceScore = 0.0
         if not internal
             if bias == BULLISH and ob.barLow < swingLow.currentLevel
                 ob.is_hp := true
+                confluenceScore += 1.0
             else if bias == BEARISH and ob.barHigh > swingHigh.currentLevel
                 ob.is_hp := true
+                confluenceScore += 1.0
+            
+            // Add more confluence factors
+            if showPremiumDiscountZonesInput
+                eq = math.avg(trailing.top, trailing.bottom)
+                if (bias == BULLISH and ob.barLow < eq) or (bias == BEARISH and ob.barHigh > eq)
+                    confluenceScore += 0.5
+            
+            if showEqualHighsLowsInput
+                confluenceScore += 0.3
+            
+            if showFairValueGapsInput
+                confluenceScore += 0.2
+                
+            ob.confluenceScore := confluenceScore
+            ob.isHighProbability := confluenceScore >= 1.5
+        
         blocks = internal ? internalOrderBlocks : swingOrderBlocks
         if blocks.size() >= 100
             blocks.pop()
@@ -383,6 +407,21 @@ drawOrderBlocks(bool internal) =>
             box.set_border_color(b_clr)
             box.set_bgcolor(clr)
             box.set_border_width(b.is_hp ? 2 : 1)
+            
+            // Add confluence score label if enabled
+            if confluenceScoreInput and not internal
+                labelText = "CS: " + str.tostring(b.confluenceScore, "#.#")
+                if b.isHighProbability
+                    labelText := "🟢 " + labelText
+                label.new(
+                    chart.point.new(b.barTime, na, b.bias == BULLISH ? b.barHigh : b.barLow),
+                    labelText,
+                    xloc.bar_time,
+                    color=color.new(color.white, 20),
+                    textcolor=b.bias == BULLISH ? color.green : color.red,
+                    style=b.bias == BULLISH ? label.style_label_down : label.style_label_up,
+                    size=size.small
+                )
 
 displayStructure(bool isInternal) =>
     isBullBar = true
@@ -410,7 +449,7 @@ displayStructure(bool isInternal) =>
         if cond
             drawStructure(p, tag, bullClr, lStyle, label.style_label_down, size)
         if (isInternal and showInternalOrderBlocksInput) or (not isInternal and showSwingOrderBlocksInput)
-            storeOrdeBlock(p, isInternal, BULLISH)
+            storeOrderBlock(p, isInternal, BULLISH)
     p := isInternal ? internalLow : swingLow
     extra := isInternal ? internalLow.currentLevel != swingLow.currentLevel and isBearBar : true
     bearClr = styleInput == MONOCHROME ? MONO_BEARISH : isInternal ? internalBearColorInput : swingBearColorInput
@@ -428,7 +467,7 @@ displayStructure(bool isInternal) =>
         if cond
             drawStructure(p, tag, bearClr, lStyle, label.style_label_up, size)
         if (isInternal and showInternalOrderBlocksInput) or (not isInternal and showSwingOrderBlocksInput)
-            storeOrdeBlock(p, isInternal, BEARISH)
+            storeOrderBlock(p, isInternal, BEARISH)
 
 fairValueGapBox(leftTime, rightTime, top, bottom, clr) => box.new(chart.point.new(leftTime, na, top), chart.point.new(rightTime + fairValueGapsExtendInput * (time - time[1]), na, bottom), xloc.bar_time, clr, clr)
 
