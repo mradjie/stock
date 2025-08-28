@@ -417,10 +417,10 @@ drawOrderBlocks(bool internal) =>
                     chart.point.new(b.barTime, na, b.bias == BULLISH ? b.barHigh : b.barLow),
                     labelText,
                     xloc.bar_time,
-                    color = color.new(color.white, 20),
-                    textcolor = b.bias == BULLISH ? color.green : color.red,
-                    style = b.bias == BULLISH ? label.style_label_down : label.style_label_up,
-                    size = size.small
+                    color=color.new(color.white, 20),
+                    textcolor=b.bias == BULLISH ? color.green : color.red,
+                    style=b.bias == BULLISH ? label.style_label_down : label.style_label_up,
+                    size=size.small
                 )
 
 displayStructure(bool isInternal) =>
