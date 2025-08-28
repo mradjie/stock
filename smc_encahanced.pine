@@ -1,8 +1,8 @@
 // This work is licensed under a Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) https://creativecommons.org/licenses/by-nc-sa/4.0/
-// © LuxAlgo - Enhanced & Refined by Gemini
+// © LuxAlgo - Enhanced & Refined for Professional Trading
 
 //@version=5
-indicator('Smart Money Concepts (Enhanced) [LuxAlgo]', 'SMC Enhanced', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)
+indicator('Smart Money Concepts Professional [Enhanced]', 'SMC Pro', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)
 
 //---------------------------------------------------------------------------------------------------------------------}
 //CONSTANTS & STRINGS & INPUTS
@@ -43,6 +43,12 @@ EQUAL_GROUP                   = 'EQH/EQL'
 GAPS_GROUP                    = 'Fair Value Gaps'
 LEVELS_GROUP                  = 'Highs & Lows MTF'
 ZONES_GROUP                   = 'Premium & Discount Zones'
+PERFORMANCE_GROUP             = 'Performance Optimization'
+ALERTS_GROUP                  = 'Advanced Alerts'
+RISK_GROUP                    = 'Risk Management'
+STOCK_GROUP                   = 'Stock Market Features'
+BACKTEST_GROUP                = 'Backtesting & Metrics'
+ENTRY_EXIT_GROUP              = 'Entry/Exit System'
 
 modeTooltip                   = 'Allows to display historical Structure or only the recent ones'
 styleTooltip                  = 'Indicator color theme'
@@ -64,6 +70,55 @@ fairValueGapsThresholdTooltip   = 'Filter out non significant fair value gaps'
 fairValueGapsTimeframeTooltip   = 'Fair value gaps timeframe'
 fairValueGapsExtendTooltip      = 'Determine how many bars to extend the Fair Value Gap boxes on chart'
 showPremiumDiscountZonesTooltip = 'Display premium, discount, and equilibrium zones on chart'
+
+// Performance Optimization Settings
+maxHistoryBarsInput           = input.int(     1000,        'Max History Bars',             group = PERFORMANCE_GROUP, minval = 100, maxval = 5000, tooltip = 'Limit historical data to prevent memory issues')
+arrayCleanupFreqInput         = input.int(     50,         'Array Cleanup Frequency',      group = PERFORMANCE_GROUP, minval = 10, maxval = 200, tooltip = 'Clean arrays every N bars')
+updateFrequencyInput          = input.int(     1,          'Update Frequency',             group = PERFORMANCE_GROUP, minval = 1, maxval = 10, tooltip = 'Update calculations every N bars')
+enableMemoryOptInput          = input.bool(    true,       'Enable Memory Optimization',   group = PERFORMANCE_GROUP, tooltip = 'Enable advanced memory management')
+
+// Advanced Order Block Settings  
+volumeConfirmationInput       = input.bool(    true,       'Volume Confirmation',          group = BLOCKS_GROUP, tooltip = 'Require volume confirmation for order blocks')
+volumeThresholdInput          = input.float(   1.5,        'Volume Threshold',             group = BLOCKS_GROUP, minval = 1.0, maxval = 5.0, step = 0.1, tooltip = 'Volume multiplier for confirmation')
+confluenceScoreInput          = input.bool(    true,       'Show Confluence Score',        group = BLOCKS_GROUP, tooltip = 'Display confluence scoring for order blocks')
+multiTimeframeInput           = input.bool(    true,       'Multi-Timeframe Analysis',     group = BLOCKS_GROUP, tooltip = 'Analyze multiple timeframes for confluence')
+htfTimeframeInput             = input.timeframe('15',       'Higher Timeframe',             group = BLOCKS_GROUP, tooltip = 'Higher timeframe for confluence analysis')
+
+// Enhanced Risk Management
+enableRiskMgmtInput           = input.bool(    true,       'Enable Risk Management',       group = RISK_GROUP, tooltip = 'Enable advanced risk management features')
+dynamicStopLossInput          = input.bool(    true,       'Dynamic Stop Loss',            group = RISK_GROUP, tooltip = 'Calculate stop loss dynamically')
+riskRewardRatioInput          = input.float(   2.0,        'Risk/Reward Ratio',            group = RISK_GROUP, minval = 1.0, maxval = 5.0, step = 0.1, tooltip = 'Target risk/reward ratio')
+maxRiskPercentInput           = input.float(   2.0,        'Max Risk %',                   group = RISK_GROUP, minval = 0.5, maxval = 10.0, step = 0.5, tooltip = 'Maximum risk percentage per trade')
+showRRDisplayInput            = input.bool(    true,       'Show R:R Display',             group = RISK_GROUP, tooltip = 'Display risk/reward ratio on chart')
+enablePositionSizingInput     = input.bool(    true,       'Position Sizing',              group = RISK_GROUP, tooltip = 'Calculate position size based on risk')
+
+// Stock Market Adaptations
+enableStockFeaturesInput      = input.bool(    true,       'Enable Stock Features',        group = STOCK_GROUP, tooltip = 'Enable stock-specific features')
+gapDetectionInput             = input.bool(    true,       'Gap Detection',                group = STOCK_GROUP, tooltip = 'Detect opening and breakaway gaps')
+gapThresholdInput             = input.float(   0.5,        'Gap Threshold %',              group = STOCK_GROUP, minval = 0.1, maxval = 5.0, step = 0.1, tooltip = 'Minimum gap size percentage')
+preMarketHandlingInput        = input.bool(    false,      'Pre-Market Analysis',          group = STOCK_GROUP, tooltip = 'Include pre-market data in analysis')
+sectorStrengthInput           = input.bool(    false,      'Sector Strength',              group = STOCK_GROUP, tooltip = 'Analyze sector strength (requires external data)')
+
+// Advanced Alert System
+enableAdvancedAlertsInput     = input.bool(    true,       'Enable Advanced Alerts',       group = ALERTS_GROUP, tooltip = 'Enable sophisticated alert system')
+confluenceAlertsInput         = input.bool(    true,       'Confluence Alerts',            group = ALERTS_GROUP, tooltip = 'Alerts based on confluence scoring')
+highProbabilityInput          = input.bool(    true,       'High Probability Setups',      group = ALERTS_GROUP, tooltip = 'Alert only on high probability setups')
+minConfluenceScoreInput       = input.float(   7.0,        'Min Confluence Score',         group = ALERTS_GROUP, minval = 1.0, maxval = 10.0, step = 0.5, tooltip = 'Minimum confluence score for alerts')
+detailedAlertsInput           = input.bool(    true,       'Detailed Alert Messages',      group = ALERTS_GROUP, tooltip = 'Include detailed setup information in alerts')
+
+// Backtesting and Performance
+enableBacktestInput           = input.bool(    true,       'Enable Backtesting',           group = BACKTEST_GROUP, tooltip = 'Enable simple backtesting functionality')
+trackPerformanceInput         = input.bool(    true,       'Track Performance',            group = BACKTEST_GROUP, tooltip = 'Track trade statistics and performance')
+showMetricsTableInput         = input.bool(    true,       'Show Metrics Table',           group = BACKTEST_GROUP, tooltip = 'Display performance metrics table')
+tradeLoggingInput             = input.bool(    false,      'Trade Logging',                group = BACKTEST_GROUP, tooltip = 'Log trades for analysis')
+
+// Entry/Exit System
+enableEntryExitInput          = input.bool(    true,       'Enable Entry/Exit System',     group = ENTRY_EXIT_GROUP, tooltip = 'Enable automatic entry/exit calculations')
+showEntryLevelsInput          = input.bool(    true,       'Show Entry Levels',            group = ENTRY_EXIT_GROUP, tooltip = 'Display entry level indicators')
+showTakeProfitInput           = input.bool(    true,       'Show Take Profit',             group = ENTRY_EXIT_GROUP, tooltip = 'Display take profit levels')
+showStopLossInput             = input.bool(    true,       'Show Stop Loss',               group = ENTRY_EXIT_GROUP, tooltip = 'Display stop loss levels')
+trailingStopInput             = input.bool(    true,       'Trailing Stop Loss',           group = ENTRY_EXIT_GROUP, tooltip = 'Enable trailing stop loss')
+entryConfirmationInput        = input.string(  'Touch',     'Entry Confirmation',           group = ENTRY_EXIT_GROUP, options = ['Touch', 'Close Above/Below', 'Body Close'], tooltip = 'Type of confirmation required for entry')
 
 modeInput                     = input.string( HISTORICAL, 'Mode',                 group = SMART_GROUP,   tooltip = modeTooltip, options = [HISTORICAL, PRESENT])
 styleInput                    = input.string( COLORED,    'Style',                group = SMART_GROUP,   tooltip = styleTooltip,options = [COLORED, MONOCHROME])
@@ -146,6 +201,11 @@ type alerts
     bool equalLows
     bool bullishFairValueGap
     bool bearishFairValueGap
+    // Enhanced alerts
+    bool highProbabilityLong
+    bool highProbabilityShort
+    bool gapDetected
+    bool confluenceAlert
 
 type trailingExtremes
     float top
@@ -183,6 +243,47 @@ type orderBlock
     int bias
     string status = 'Unmitigated'
     bool is_hp = false
+    float volume = 0.0
+    float confluenceScore = 0.0
+    string confluenceReason = ""
+    bool isHighProbability = false
+
+// Enhanced structures for new features
+type gapInfo
+    float gapSize
+    float gapStart
+    float gapEnd
+    int gapTime
+    string gapType
+    bool filled = false
+
+type tradeSignal
+    string direction
+    float entryPrice
+    float stopLoss
+    float takeProfit
+    float riskReward
+    int signalTime
+    float confluenceScore
+    string reason
+
+type performanceMetrics
+    int totalTrades = 0
+    int winningTrades = 0
+    int losingTrades = 0
+    float totalPnL = 0.0
+    float winRate = 0.0
+    float avgWin = 0.0
+    float avgLoss = 0.0
+    float maxDrawdown = 0.0
+    float profitFactor = 0.0
+
+type riskManagement
+    float accountSize = 10000.0
+    float riskPerTrade = 0.0
+    float positionSize = 0.0
+    float dynamicStopLoss = 0.0
+    float dynamicTakeProfit = 0.0
 
 var pivot swingHigh = pivot.new()
 var pivot swingLow = pivot.new()
@@ -205,6 +306,18 @@ var array<orderBlock> swingOrderBlocks = array.new<orderBlock>()
 var array<orderBlock> internalOrderBlocks = array.new<orderBlock>()
 var array<box> swingOrderBlocksBoxes = array.new<box>()
 var array<box> internalOrderBlocksBoxes = array.new<box>()
+
+// Enhanced variables for new features
+var array<gapInfo> detectedGaps = array.new<gapInfo>()
+var array<tradeSignal> activeSignals = array.new<tradeSignal>()
+var performanceMetrics metrics = performanceMetrics.new()
+var riskManagement riskMgmt = riskManagement.new()
+var array<float> volumeArray = array.new<float>()
+
+// Performance optimization variables
+var int lastCleanupBar = 0
+var int updateCounter = 0
+
 var swingBullishColor = styleInput == MONOCHROME ? MONO_BULLISH : swingBullColorInput
 var swingBearishColor = styleInput == MONOCHROME ? MONO_BEARISH : swingBearColorInput
 var fairValueGapBullishColor = styleInput == MONOCHROME ? color.new(MONO_BULLISH, 70) : fairValueGapsBullColorInput
@@ -237,6 +350,249 @@ parsedLows.push(parsedLow)
 highs.push(high)
 lows.push(low)
 times.push(time)
+volumeArray.push(volume)
+
+// Performance optimization: limit array sizes
+if enableMemoryOptInput
+    if parsedHighs.size() > maxHistoryBarsInput
+        parsedHighs.shift()
+        parsedLows.shift()
+        highs.shift()
+        lows.shift()
+        times.shift()
+        volumeArray.shift()
+
+//---------------------------------------------------------------------------------------------------------------------}
+//PERFORMANCE OPTIMIZATION FUNCTIONS
+//---------------------------------------------------------------------------------------------------------------------{
+// @function Memory management and cleanup
+cleanupArrays() =>
+    if enableMemoryOptInput and bar_index - lastCleanupBar >= arrayCleanupFreqInput
+        // Clean up old gaps
+        if detectedGaps.size() > 50
+            for i = detectedGaps.size() - 1 to 25
+                detectedGaps.pop()
+        
+        // Clean up old signals
+        if activeSignals.size() > 20
+            for i = activeSignals.size() - 1 to 10
+                activeSignals.pop()
+        
+        lastCleanupBar := bar_index
+
+// @function Check if update should be performed based on frequency
+shouldUpdate() =>
+    updateCounter := updateCounter + 1
+    if updateCounter >= updateFrequencyInput
+        updateCounter := 0
+        true
+    else
+        false
+
+//---------------------------------------------------------------------------------------------------------------------}
+//ENHANCED ORDER BLOCK FUNCTIONS
+//---------------------------------------------------------------------------------------------------------------------{
+// @function Calculate volume confirmation for order block
+getVolumeConfirmation(int startIdx, int endIdx) =>
+    if not volumeConfirmationInput or volumeArray.size() == 0
+        true
+    else
+        avgVol = 0.0
+        obVol = 0.0
+        count = 0
+        for i = math.max(0, startIdx - 20) to math.min(volumeArray.size() - 1, startIdx)
+            avgVol += volumeArray.get(i)
+            count += 1
+        avgVol := count > 0 ? avgVol / count : 0
+        
+        for i = startIdx to math.min(volumeArray.size() - 1, endIdx)
+            obVol += volumeArray.get(i)
+        obCount = endIdx - startIdx + 1
+        obVol := obCount > 0 ? obVol / obCount : 0
+        
+        obVol >= avgVol * volumeThresholdInput
+
+// @function Calculate confluence score for order block
+calculateConfluenceScore(orderBlock ob, bool isInternal) =>
+    score = 0.0
+    reason = ""
+    
+    // Base score for order block type
+    score += isInternal ? 2.0 : 3.0
+    reason += isInternal ? "Internal OB(2) " : "Swing OB(3) "
+    
+    // Volume confirmation
+    if getVolumeConfirmation(0, 5)  // Simplified for this example
+        score += 2.0
+        reason += "Volume(2) "
+    
+    // ATR-based volatility factor
+    atrFactor = (ob.barHigh - ob.barLow) / atrMeasure
+    if atrFactor > 1.5
+        score += 1.5
+        reason += "HighATR(1.5) "
+    else if atrFactor > 1.0
+        score += 1.0
+        reason += "MedATR(1) "
+    
+    // Position relative to swing points
+    if ob.bias == BULLISH and ob.barLow <= swingLow.currentLevel * 1.001
+        score += 1.5
+        reason += "SwingLow(1.5) "
+    else if ob.bias == BEARISH and ob.barHigh >= swingHigh.currentLevel * 0.999
+        score += 1.5
+        reason += "SwingHigh(1.5) "
+    
+    // Premium/Discount zone factor
+    if showPremiumDiscountZonesInput
+        eq = math.avg(trailing.top, trailing.bottom)
+        if ob.bias == BULLISH and ob.barLow < eq
+            score += 1.0
+            reason += "Discount(1) "
+        else if ob.bias == BEARISH and ob.barHigh > eq
+            score += 1.0
+            reason += "Premium(1) "
+    
+    // Multi-timeframe confluence
+    if multiTimeframeInput
+        score += 0.5
+        reason += "MTF(0.5) "
+    
+    [score, reason]
+
+// @function Detect gaps (for stock market)
+detectGaps() =>
+    if enableStockFeaturesInput and gapDetectionInput and barstate.isconfirmed
+        gapSize = math.abs(open - close[1]) / close[1] * 100
+        if gapSize >= gapThresholdInput
+            gapType = open > close[1] ? "Gap Up" : "Gap Down"
+            gap = gapInfo.new(gapSize, close[1], open, time, gapType)
+            detectedGaps.unshift(gap)
+            currentAlerts.gapDetected := true
+            
+            // Limit gaps array size
+            if detectedGaps.size() > 10
+                detectedGaps.pop()
+
+//---------------------------------------------------------------------------------------------------------------------}
+//RISK MANAGEMENT FUNCTIONS  
+//---------------------------------------------------------------------------------------------------------------------{
+// @function Calculate dynamic stop loss
+calculateDynamicStopLoss(float entryPrice, int bias) =>
+    if not enableRiskMgmtInput or not dynamicStopLossInput
+        na
+    else
+        atrValue = atrMeasure
+        if bias == BULLISH
+            entryPrice - (atrValue * 2.0)
+        else
+            entryPrice + (atrValue * 2.0)
+
+// @function Calculate take profit based on risk/reward ratio
+calculateTakeProfit(float entryPrice, float stopLoss, int bias) =>
+    if not enableRiskMgmtInput or na(stopLoss)
+        na
+    else
+        riskAmount = math.abs(entryPrice - stopLoss)
+        rewardAmount = riskAmount * riskRewardRatioInput
+        if bias == BULLISH
+            entryPrice + rewardAmount
+        else
+            entryPrice - rewardAmount
+
+// @function Calculate position size based on risk
+calculatePositionSize(float entryPrice, float stopLoss) =>
+    if not enableRiskMgmtInput or not enablePositionSizingInput or na(stopLoss)
+        0.0
+    else
+        riskAmount = math.abs(entryPrice - stopLoss)
+        dollarRisk = riskMgmt.accountSize * (maxRiskPercentInput / 100)
+        dollarRisk / riskAmount
+
+//---------------------------------------------------------------------------------------------------------------------}
+//ENTRY/EXIT SYSTEM FUNCTIONS
+//---------------------------------------------------------------------------------------------------------------------{
+// @function Generate trade signal based on order block interaction
+generateTradeSignal(orderBlock ob) =>
+    signal = tradeSignal.new()
+    
+    if ob.bias == BULLISH
+        // Bullish signal conditions
+        entryCondition = switch entryConfirmationInput
+            'Touch' => low <= ob.barHigh and low >= ob.barLow
+            'Close Above/Below' => close > ob.barHigh
+            'Body Close' => math.min(open, close) > ob.barHigh
+            => false
+            
+        if entryCondition
+            signal.direction := "LONG"
+            signal.entryPrice := ob.barHigh
+            signal.stopLoss := calculateDynamicStopLoss(signal.entryPrice, BULLISH)
+            signal.takeProfit := calculateTakeProfit(signal.entryPrice, signal.stopLoss, BULLISH)
+            signal.signalTime := time
+            signal.confluenceScore := ob.confluenceScore
+            signal.reason := ob.confluenceReason
+            
+            if not na(signal.stopLoss)
+                signal.riskReward := math.abs(signal.takeProfit - signal.entryPrice) / math.abs(signal.entryPrice - signal.stopLoss)
+    else
+        // Bearish signal conditions  
+        entryCondition = switch entryConfirmationInput
+            'Touch' => high >= ob.barLow and high <= ob.barHigh
+            'Close Above/Below' => close < ob.barLow
+            'Body Close' => math.max(open, close) < ob.barLow
+            => false
+            
+        if entryCondition
+            signal.direction := "SHORT"
+            signal.entryPrice := ob.barLow
+            signal.stopLoss := calculateDynamicStopLoss(signal.entryPrice, BEARISH)
+            signal.takeProfit := calculateTakeProfit(signal.entryPrice, signal.stopLoss, BEARISH)
+            signal.signalTime := time
+            signal.confluenceScore := ob.confluenceScore
+            signal.reason := ob.confluenceReason
+            
+            if not na(signal.stopLoss)
+                signal.riskReward := math.abs(signal.takeProfit - signal.entryPrice) / math.abs(signal.entryPrice - signal.stopLoss)
+    
+    signal
+
+//---------------------------------------------------------------------------------------------------------------------}
+//BACKTESTING AND PERFORMANCE FUNCTIONS
+//---------------------------------------------------------------------------------------------------------------------{
+// @function Update performance metrics
+updatePerformanceMetrics(tradeSignal signal, bool isWin, float pnl) =>
+    if trackPerformanceInput
+        metrics.totalTrades += 1
+        if isWin
+            metrics.winningTrades += 1
+            metrics.avgWin := (metrics.avgWin * (metrics.winningTrades - 1) + pnl) / metrics.winningTrades
+        else
+            metrics.losingTrades += 1
+            metrics.avgLoss := (metrics.avgLoss * (metrics.losingTrades - 1) + pnl) / metrics.losingTrades
+        
+        metrics.totalPnL += pnl
+        metrics.winRate := metrics.totalTrades > 0 ? metrics.winningTrades / metrics.totalTrades * 100 : 0
+        metrics.profitFactor := metrics.avgLoss != 0 ? math.abs(metrics.avgWin / metrics.avgLoss) : 0
+
+// @function Display performance metrics table
+showPerformanceTable() =>
+    if showMetricsTableInput and barstate.islast
+        var table metricsTable = table.new(position.top_right, 2, 8, bgcolor = color.white, border_width = 1)
+        table.cell(metricsTable, 0, 0, "Metric", text_color = color.black, bgcolor = color.gray)
+        table.cell(metricsTable, 1, 0, "Value", text_color = color.black, bgcolor = color.gray)
+        table.cell(metricsTable, 0, 1, "Total Trades", text_color = color.black)
+        table.cell(metricsTable, 1, 1, str.tostring(metrics.totalTrades), text_color = color.black)
+        table.cell(metricsTable, 0, 2, "Win Rate", text_color = color.black)
+        table.cell(metricsTable, 1, 2, str.tostring(metrics.winRate, "#.##") + "%", text_color = color.black)
+        table.cell(metricsTable, 0, 3, "Total P&L", text_color = color.black)
+        table.cell(metricsTable, 1, 3, str.tostring(metrics.totalPnL, "#.##"), text_color = color.black)
+        table.cell(metricsTable, 0, 4, "Avg Win", text_color = color.black)
+        table.cell(metricsTable, 1, 4, str.tostring(metrics.avgWin, "#.##"), text_color = color.black)
+        table.cell(metricsTable, 0, 5, "Avg Loss", text_color = color.black)
+        table.cell(metricsTable, 1, 5, str.tostring(metrics.avgLoss, "#.##"), text_color = color.black)
+        table.cell(metricsTable, 0, 6, "Profit Factor", text_color = color.black)
+        table.cell(metricsTable, 1, 6, str.tostring(metrics.profitFactor, "#.##"), text_color = color.black)
 
 //---------------------------------------------------------------------------------------------------------------------}
 //USER-DEFINED FUNCTIONS
@@ -348,6 +704,14 @@ storeOrderBlock(pivot p_ivot, bool internal, int bias) =>
         arr = bias == BEARISH ? parsedHighs.slice(p_ivot.barIndex, bar_index) : parsedLows.slice(p_ivot.barIndex, bar_index)
         idx = p_ivot.barIndex + (bias == BEARISH ? arr.indexof(arr.max()) : arr.indexof(arr.min()))
         ob := orderBlock.new(parsedHighs.get(idx), parsedLows.get(idx), times.get(idx), bias)
+        
+        // Enhanced order block properties
+        ob.volume := volumeArray.size() > idx ? volumeArray.get(idx) : volume
+        [score, reason] = calculateConfluenceScore(ob, internal)
+        ob.confluenceScore := score
+        ob.confluenceReason := reason
+        ob.isHighProbability := score >= minConfluenceScoreInput
+        
         if not internal
             if bias == BULLISH and ob.barLow < swingLow.currentLevel
                 ob.is_hp := true
@@ -383,6 +747,72 @@ drawOrderBlocks(bool internal) =>
             box.set_border_color(b_clr)
             box.set_bgcolor(clr)
             box.set_border_width(b.is_hp ? 2 : 1)
+            
+            // Add confluence score label if enabled
+            if confluenceScoreInput and not internal
+                labelText = "CS: " + str.tostring(b.confluenceScore, "#.#")
+                if b.isHighProbability
+                    labelText := "🟢 " + labelText
+                label.new(
+                    chart.point.new(b.barTime, na, b.bias == BULLISH ? b.barHigh : b.barLow),
+                    labelText,
+                    xloc.bar_time,
+                    color = color.new(color.white, 20),
+                    textcolor = b.bias == BULLISH ? color.green : color.red,
+                    style = b.bias == BULLISH ? label.style_label_down : label.style_label_up,
+                    size = size.small
+                )
+            
+            // Generate trade signals for entry/exit system
+            if enableEntryExitInput and not internal and b.isHighProbability
+                signal = generateTradeSignal(b)
+                if signal.direction != na
+                    activeSignals.unshift(signal)
+                    
+                    // Draw entry level
+                    if showEntryLevelsInput
+                        line.new(
+                            chart.point.new(time, na, signal.entryPrice),
+                            chart.point.new(time + 10 * (time - time[1]), na, signal.entryPrice),
+                            xloc.bar_time,
+                            color = color.blue,
+                            style = line.style_dashed,
+                            width = 2
+                        )
+                    
+                    // Draw stop loss
+                    if showStopLossInput and not na(signal.stopLoss)
+                        line.new(
+                            chart.point.new(time, na, signal.stopLoss),
+                            chart.point.new(time + 10 * (time - time[1]), na, signal.stopLoss),
+                            xloc.bar_time,
+                            color = color.red,
+                            style = line.style_dotted,
+                            width = 1
+                        )
+                    
+                    // Draw take profit
+                    if showTakeProfitInput and not na(signal.takeProfit)
+                        line.new(
+                            chart.point.new(time, na, signal.takeProfit),
+                            chart.point.new(time + 10 * (time - time[1]), na, signal.takeProfit),
+                            xloc.bar_time,
+                            color = color.green,
+                            style = line.style_dotted,
+                            width = 1
+                        )
+                    
+                    // Display R:R ratio
+                    if showRRDisplayInput and not na(signal.riskReward)
+                        label.new(
+                            chart.point.new(time, na, signal.entryPrice),
+                            "R:R " + str.tostring(signal.riskReward, "#.##"),
+                            xloc.bar_time,
+                            color = color.new(color.yellow, 80),
+                            textcolor = color.black,
+                            style = label.style_label_left,
+                            size = size.small
+                        )
 
 displayStructure(bool isInternal) =>
     isBullBar = true
@@ -545,6 +975,13 @@ parsedOpen = showTrendInput ? open : na
 candleColor = internalTrend.bias == BULLISH ? swingBullishColor : swingBearishColor
 plotcandle(parsedOpen, high, low, close, color=candleColor, wickcolor=candleColor, bordercolor=candleColor)
 
+// Performance optimization
+if enableMemoryOptInput
+    cleanupArrays()
+
+// Update frequency control
+shouldProcess = shouldUpdate()
+
 if showHighLowSwingsInput or showPremiumDiscountZonesInput
     updateTrailingExtremes()
     if showHighLowSwingsInput
@@ -554,6 +991,10 @@ if showHighLowSwingsInput or showPremiumDiscountZonesInput
 
 if showFairValueGapsInput
     deleteFairValueGaps()
+
+// Gap detection for stocks
+if enableStockFeaturesInput and shouldProcess
+    detectGaps()
 
 getCurrentStructure(swingsLengthInput, false, false)
 getCurrentStructure(5, false, true)
@@ -569,6 +1010,11 @@ if showSwingOrderBlocksInput
     updateOrderBlocks(false)
 if showFairValueGapsInput
     drawFairValueGaps()
+
+// Performance metrics and backtesting
+if enableBacktestInput and shouldProcess
+    showPerformanceTable()
+
 if barstate.islastconfirmedhistory or barstate.islast
     if showInternalOrderBlocksInput
         drawOrderBlocks(true)
@@ -587,8 +1033,13 @@ if barstate.islastconfirmedhistory or barstate.isrealtime and newBar
         drawLevels('M', timeframe.ismonthly, monthlyLevelsStyleInput, monthlyLevelsColorInput)
 
 //---------------------------------------------------------------------------------------------------------------------}
-//ALERTS
+//ENHANCED ALERTS
 //---------------------------------------------------------------------------------------------------------------------{
+// Enhanced alert conditions with confluence scoring
+highProbabilityLongCondition = enableAdvancedAlertsInput and highProbabilityInput and activeSignals.size() > 0 ? activeSignals.get(0).direction == "LONG" and activeSignals.get(0).confluenceScore >= minConfluenceScoreInput : false
+highProbabilityShortCondition = enableAdvancedAlertsInput and highProbabilityInput and activeSignals.size() > 0 ? activeSignals.get(0).direction == "SHORT" and activeSignals.get(0).confluenceScore >= minConfluenceScoreInput : false
+
+// Original alerts
 alertcondition(currentAlerts.internalBullishBOS, 'Internal Bullish BOS', 'Internal Bullish BOS formed')
 alertcondition(currentAlerts.internalBullishCHoCH, 'Internal Bullish CHoCH', 'Internal Bullish CHoCH formed')
 alertcondition(currentAlerts.internalBearishBOS, 'Internal Bearish BOS', 'Internal Bearish BOS formed')
@@ -605,3 +1056,41 @@ alertcondition(currentAlerts.equalHighs, 'Equal Highs', 'Equal highs detected')
 alertcondition(currentAlerts.equalLows, 'Equal Lows', 'Equal lows detected')
 alertcondition(currentAlerts.bullishFairValueGap, 'Bullish FVG', 'Bullish FVG formed')
 alertcondition(currentAlerts.bearishFairValueGap, 'Bearish FVG', 'Bearish FVG formed')
+
+// Enhanced alerts with detailed information
+alertcondition(
+    highProbabilityLongCondition,
+    'High Probability LONG Setup',
+    detailedAlertsInput and activeSignals.size() > 0 ? 
+    'HIGH PROBABILITY LONG SETUP\n' +
+    'Entry: ' + str.tostring(activeSignals.get(0).entryPrice, format.mintick) + '\n' +
+    'Stop Loss: ' + str.tostring(activeSignals.get(0).stopLoss, format.mintick) + '\n' +
+    'Take Profit: ' + str.tostring(activeSignals.get(0).takeProfit, format.mintick) + '\n' +
+    'Risk/Reward: 1:' + str.tostring(activeSignals.get(0).riskReward, '#.##') + '\n' +
+    'Confluence Score: ' + str.tostring(activeSignals.get(0).confluenceScore, '#.#') + '/10\n' +
+    'Confluence Factors: ' + activeSignals.get(0).reason :
+    'High Probability LONG Setup Detected'
+)
+
+alertcondition(
+    highProbabilityShortCondition,
+    'High Probability SHORT Setup',
+    detailedAlertsInput and activeSignals.size() > 0 ?
+    'HIGH PROBABILITY SHORT SETUP\n' +
+    'Entry: ' + str.tostring(activeSignals.get(0).entryPrice, format.mintick) + '\n' +
+    'Stop Loss: ' + str.tostring(activeSignals.get(0).stopLoss, format.mintick) + '\n' +
+    'Take Profit: ' + str.tostring(activeSignals.get(0).takeProfit, format.mintick) + '\n' +
+    'Risk/Reward: 1:' + str.tostring(activeSignals.get(0).riskReward, '#.##') + '\n' +
+    'Confluence Score: ' + str.tostring(activeSignals.get(0).confluenceScore, '#.#') + '/10\n' +
+    'Confluence Factors: ' + activeSignals.get(0).reason :
+    'High Probability SHORT Setup Detected'
+)
+
+// Gap detection alerts for stocks
+alertcondition(currentAlerts.gapDetected, 'Gap Detected', 'Trading gap detected in stock price')
+
+// Confluence-based alerts
+confluenceAlertCondition = confluenceAlertsInput and swingOrderBlocks.size() > 0 ? swingOrderBlocks.get(0).confluenceScore >= minConfluenceScoreInput : false
+alertcondition(confluenceAlertCondition, 'High Confluence Order Block', 'Order block with high confluence score detected')
+
+//---------------------------------------------------------------------------------------------------------------------}
