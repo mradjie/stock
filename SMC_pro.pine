@@ -1,0 +1,1469 @@
+// This work is licensed under a Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) https://creativecommons.org/licenses/by-nc-sa/4.0/
+// © LuxAlgo - Enhanced & Refined for Professional Trading 
+
+//@version=5
+indicator('Smart Money Concepts Professional [Enhanced]', 'SMC Pro', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)
+
+//---------------------------------------------------------------------------------------------------------------------}
+//CONSTANTS & STRINGS & INPUTS
+//---------------------------------------------------------------------------------------------------------------------{
+BULLISH_LEG                   = 1
+BEARISH_LEG                   = 0
+// BULLISH                       = +1
+// BEARISH                       = -1
+var int BULLISH               = 1
+var int BEARISH               = -1
+GREEN                         = #089981
+RED                           = #F23645
+BLUE                          = #2157f3
+GRAY                          = #878b94
+MONO_BULLISH                  = #b2b5be
+MONO_BEARISH                  = #5d606b
+HP_BORDER_COLOR               = color.new(color.yellow, 0)
+HISTORICAL                    = 'Historical'
+PRESENT                       = 'Present'
+COLORED                       = 'Colored'
+MONOCHROME                    = 'Monochrome'
+ALL                           = 'All'
+BOS                           = 'BOS'
+CHOCH                         = 'CHoCH'
+TINY                          = size.tiny
+SMALL                         = size.small
+NORMAL                        = size.normal
+ATR                           = 'Atr'
+RANGE                         = 'Cumulative Mean Range'
+CLOSE                         = 'Close'
+HIGHLOW                       = 'High/Low'
+SOLID                         = '⎯⎯⎯'
+DASHED                        = '----'
+DOTTED                        = '····'
+SMART_GROUP                   = 'Smart Money Concepts'
+INTERNAL_GROUP                = 'Real Time Internal Structure'
+SWING_GROUP                   = 'Real Time Swing Structure'
+BLOCKS_GROUP                  = 'Order Blocks'
+EQUAL_GROUP                   = 'EQH/EQL'
+GAPS_GROUP                    = 'Fair Value Gaps'
+LEVELS_GROUP                  = 'Highs & Lows MTF'
+ZONES_GROUP                   = 'Premium & Discount Zones'
+PERFORMANCE_GROUP             = 'Performance Optimization'
+ALERTS_GROUP                  = 'Advanced Alerts'
+RISK_GROUP                    = 'Risk Management'
+STOCK_GROUP                   = 'Stock Market Features'
+BACKTEST_GROUP                = 'Backtesting & Metrics'
+ENTRY_EXIT_GROUP              = 'Entry/Exit System'
+
+modeTooltip                   = 'Allows to display historical Structure or only the recent ones'
+styleTooltip                  = 'Indicator color theme'
+showTrendTooltip              = 'Display additional candles with a color reflecting the current trend detected by structure'
+showInternalsTooltip          = 'Display internal market structure'
+internalFilterConfluenceTooltip = 'Filter non significant internal structure breakouts'
+showStructureTooltip          = 'Display swing market Structure'
+showSwingsTooltip             = 'Display swing point as labels on the chart'
+showHighLowSwingsTooltip      = 'Highlight most recent strong and weak high/low points on the chart'
+showInternalOrderBlocksTooltip  = 'Display internal order blocks on the chart\n\nNumber of internal order blocks to display on the chart'
+showSwingOrderBlocksTooltip     = 'Display swing order blocks on the chart\n\nNumber of internal swing blocks to display on the chart'
+orderBlockFilterTooltip       = 'Method used to filter out volatile order blocks \n\nIt is recommended to use the cumulative mean range method when a low amount of data is available'
+orderBlockMitigationTooltip     = 'Select what values to use for order block mitigation'
+showEqualHighsLowsTooltip       = 'Display equal highs and equal lows on the chart'
+equalHighsLowsLengthTooltip     = 'Number of bars used to confirm equal highs and equal lows'
+equalHighsLowsThresholdTooltip  = 'Sensitivity threshold in a range (0, 1) used for the detection of equal highs & lows\n\nLower values will return fewer but more pertinent results'
+showFairValueGapsTooltip        = 'Display fair values gaps on the chart'
+fairValueGapsThresholdTooltip   = 'Filter out non significant fair value gaps'
+fairValueGapsTimeframeTooltip   = 'Fair value gaps timeframe'
+fairValueGapsExtendTooltip      = 'Determine how many bars to extend the Fair Value Gap boxes on chart'
+showPremiumDiscountZonesTooltip = 'Display premium, discount, and equilibrium zones on chart'
+
+// Performance Optimization Settings
+maxHistoryBarsInput           = input.int(     1000,        'Max History Bars',             group = PERFORMANCE_GROUP, minval = 100, maxval = 5000, tooltip = 'Limit historical data to prevent memory issues')
+arrayCleanupFreqInput         = input.int(     50,         'Array Cleanup Frequency',      group = PERFORMANCE_GROUP, minval = 10, maxval = 200, tooltip = 'Clean arrays every N bars')
+updateFrequencyInput          = input.int(     1,          'Update Frequency',             group = PERFORMANCE_GROUP, minval = 1, maxval = 10, tooltip = 'Update calculations every N bars')
+enableMemoryOptInput          = input.bool(    true,       'Enable Memory Optimization',   group = PERFORMANCE_GROUP, tooltip = 'Enable advanced memory management')
+updateEveryNBarsInput         = input.int(5,      "Update Every N Bars", group = PERFORMANCE_GROUP, minval = 1,tooltip = 'Update Every N Bars')
+CLEANUP_INTERVAL              = input.int(100,    "Cleanup Interval (bars)", group = PERFORMANCE_GROUP, minval = 10, tooltip = 'Cleanup Interval')
+MAX_ARRAY_SIZE                = input.int(500,    "Max Array Size", group = PERFORMANCE_GROUP, minval = 10, tooltip = 'Max Array Size')
+
+maxGapsStoredInput      = input.int(50,     "Max Gaps Stored", group = PERFORMANCE_GROUP, minval = 5)
+keepGapsAfterTrimInput  = input.int(25,     "Keep Gaps After Trim", group = PERFORMANCE_GROUP, minval = 1)
+maxSignalsStoredInput   = input.int(20,     "Max Active Signals", group = PERFORMANCE_GROUP, minval = 5)
+keepSignalsAfterTrim    = input.int(10,     "Keep Signals After Trim", group = PERFORMANCE_GROUP, minval = 1)
+
+// Advanced Order Block Settings  
+volumeConfirmationInput       = input.bool(    true,       'Volume Confirmation',          group = BLOCKS_GROUP, tooltip = 'Require volume confirmation for order blocks')
+volumeThresholdInput          = input.float(   1.5,        'Volume Threshold',             group = BLOCKS_GROUP, minval = 1.0, maxval = 5.0, step = 0.1, tooltip = 'Volume multiplier for confirmation')
+confluenceScoreInput          = input.bool(    true,       'Show Confluence Score',        group = BLOCKS_GROUP, tooltip = 'Display confluence scoring for order blocks')
+multiTimeframeInput           = input.bool(    true,       'Multi-Timeframe Analysis',     group = BLOCKS_GROUP, tooltip = 'Analyze multiple timeframes for confluence')
+htfTimeframeInput             = input.timeframe('15',       'Higher Timeframe',             group = BLOCKS_GROUP, tooltip = 'Higher timeframe for confluence analysis')
+
+// Enhanced Risk Management
+enableRiskMgmtInput           = input.bool(    true,       'Enable Risk Management',       group = RISK_GROUP, tooltip = 'Enable advanced risk management features')
+dynamicStopLossInput          = input.bool(    true,       'Dynamic Stop Loss',            group = RISK_GROUP, tooltip = 'Calculate stop loss dynamically')
+riskRewardRatioInput          = input.float(   2.0,        'Risk/Reward Ratio',            group = RISK_GROUP, minval = 1.0, maxval = 5.0, step = 0.1, tooltip = 'Target risk/reward ratio')
+maxRiskPercentInput           = input.float(   2.0,        'Max Risk %',                   group = RISK_GROUP, minval = 0.5, maxval = 10.0, step = 0.5, tooltip = 'Maximum risk percentage per trade')
+showRRDisplayInput            = input.bool(    true,       'Show R:R Display',             group = RISK_GROUP, tooltip = 'Display risk/reward ratio on chart')
+enablePositionSizingInput     = input.bool(    true,       'Position Sizing',              group = RISK_GROUP, tooltip = 'Calculate position size based on risk')
+
+// Stock Market Adaptations
+enableStockFeaturesInput      = input.bool(    true,       'Enable Stock Features',        group = STOCK_GROUP, tooltip = 'Enable stock-specific features')
+gapDetectionInput             = input.bool(    true,       'Gap Detection',                group = STOCK_GROUP, tooltip = 'Detect opening and breakaway gaps')
+gapThresholdInput             = input.float(   0.5,        'Gap Threshold %',              group = STOCK_GROUP, minval = 0.1, maxval = 5.0, step = 0.1, tooltip = 'Minimum gap size percentage')
+preMarketHandlingInput        = input.bool(    false,      'Pre-Market Analysis',          group = STOCK_GROUP, tooltip = 'Include pre-market data in analysis')
+sectorStrengthInput           = input.bool(    false,      'Sector Strength',              group = STOCK_GROUP, tooltip = 'Analyze sector strength (requires external data)')
+
+// Advanced Alert System
+enableAdvancedAlertsInput     = input.bool(    true,       'Enable Advanced Alerts',       group = ALERTS_GROUP, tooltip = 'Enable sophisticated alert system')
+confluenceAlertsInput         = input.bool(    true,       'Confluence Alerts',            group = ALERTS_GROUP, tooltip = 'Alerts based on confluence scoring')
+highProbabilityInput          = input.bool(    true,       'High Probability Setups',      group = ALERTS_GROUP, tooltip = 'Alert only on high probability setups')
+minConfluenceScoreInput       = input.float(   7.0,        'Min Confluence Score',         group = ALERTS_GROUP, minval = 1.0, maxval = 10.0, step = 0.5, tooltip = 'Minimum confluence score for alerts')
+detailedAlertsInput           = input.bool(    true,       'Detailed Alert Messages',      group = ALERTS_GROUP, tooltip = 'Include detailed setup information in alerts')
+
+// Backtesting and Performance
+enableBacktestInput           = input.bool(    true,       'Enable Backtesting',           group = BACKTEST_GROUP, tooltip = 'Enable simple backtesting functionality')
+trackPerformanceInput         = input.bool(    true,       'Track Performance',            group = BACKTEST_GROUP, tooltip = 'Track trade statistics and performance')
+showMetricsTableInput         = input.bool(    true,       'Show Metrics Table',           group = BACKTEST_GROUP, tooltip = 'Display performance metrics table')
+tradeLoggingInput             = input.bool(    false,      'Trade Logging',                group = BACKTEST_GROUP, tooltip = 'Log trades for analysis')
+
+// Entry/Exit System
+enableEntryExitInput          = input.bool(    true,       'Enable Entry/Exit System',     group = ENTRY_EXIT_GROUP, tooltip = 'Enable automatic entry/exit calculations')
+showEntryLevelsInput          = input.bool(    true,       'Show Entry Levels',            group = ENTRY_EXIT_GROUP, tooltip = 'Display entry level indicators')
+showTakeProfitInput           = input.bool(    true,       'Show Take Profit',             group = ENTRY_EXIT_GROUP, tooltip = 'Display take profit levels')
+showStopLossInput             = input.bool(    true,       'Show Stop Loss',               group = ENTRY_EXIT_GROUP, tooltip = 'Display stop loss levels')
+trailingStopInput             = input.bool(    true,       'Trailing Stop Loss',           group = ENTRY_EXIT_GROUP, tooltip = 'Enable trailing stop loss')
+entryConfirmationInput        = input.string(  'Touch',     'Entry Confirmation',           group = ENTRY_EXIT_GROUP, options = ['Touch', 'Close Above/Below', 'Body Close'], tooltip = 'Type of confirmation required for entry')
+
+modeInput                     = input.string( HISTORICAL, 'Mode',                 group = SMART_GROUP,   tooltip = modeTooltip, options = [HISTORICAL, PRESENT])
+styleInput                    = input.string( COLORED,    'Style',                group = SMART_GROUP,   tooltip = styleTooltip,options = [COLORED, MONOCHROME])
+showTrendInput                = input(        false,      'Color Candles',        group = SMART_GROUP,   tooltip = showTrendTooltip)
+filterPremiumDiscountInput    = input.bool(   true,       'Filter OB by Premium/Discount', group = BLOCKS_GROUP, tooltip = 'Only show Bullish OB in Discount Zones and Bearish OB in Premium Zones. This helps filter out low probability setups.')
+
+showInternalsInput            = input(        true,       'Show Internal Structure',  group = INTERNAL_GROUP, tooltip = showInternalsTooltip)
+showInternalBullInput         = input.string( ALL,        'Bullish Structure',        group = INTERNAL_GROUP, inline = 'ibull', options = [ALL,BOS,CHOCH])
+internalBullColorInput        = input(        GREEN,      '',                         group = INTERNAL_GROUP, inline = 'ibull')
+showInternalBearInput         = input.string( ALL,        'Bearish Structure' ,       group = INTERNAL_GROUP, inline = 'ibear', options = [ALL,BOS,CHOCH])
+internalBearColorInput        = input(        RED,        '',                         group = INTERNAL_GROUP, inline = 'ibear')
+internalFilterConfluenceInput   = input(        false,      'Confluence Filter',        group = INTERNAL_GROUP, tooltip = internalFilterConfluenceTooltip)
+internalStructureSize         = input.string( TINY,       'Internal Label Size',      group = INTERNAL_GROUP, options = [TINY,SMALL,NORMAL])
+
+showStructureInput            = input(        true,       'Show Swing Structure',     group = SWING_GROUP,   tooltip = showStructureTooltip)
+showSwingBullInput            = input.string( ALL,        'Bullish Structure',        group = SWING_GROUP,   inline = 'bull',    options = [ALL,BOS,CHOCH])
+swingBullColorInput           = input(        GREEN,      '',                         group = SWING_GROUP,   inline = 'bull')
+showSwingBearInput            = input.string( ALL,        'Bearish Structure',        group = SWING_GROUP,   inline = 'bear',    options = [ALL,BOS,CHOCH])
+swingBearColorInput           = input(        RED,        '',                         group = SWING_GROUP,   inline = 'bear')
+swingStructureSize            = input.string( SMALL,      'Swing Label Size',         group = SWING_GROUP,   options = [TINY,SMALL,NORMAL])
+showSwingsInput               = input(        false,      'Show Swings Points',       group = SWING_GROUP,   tooltip = showSwingsTooltip,inline = 'swings')
+swingsLengthInput             = input.int(    50,         '',                         group = SWING_GROUP,   minval = 10,                 inline = 'swings')
+showHighLowSwingsInput        = input(        true,       'Show Strong/Weak High/Low',group = SWING_GROUP,   tooltip = showHighLowSwingsTooltip)
+
+showInternalOrderBlocksInput    = input(        true,       'Internal Order Blocks' ,   group = BLOCKS_GROUP,  tooltip = showInternalOrderBlocksTooltip,    inline = 'iob')
+internalOrderBlocksSizeInput    = input.int(    5,          '',                         group = BLOCKS_GROUP,  minval = 1, maxval = 20,                       inline = 'iob')
+showSwingOrderBlocksInput       = input(        true,       'Swing Order Blocks',       group = BLOCKS_GROUP,  tooltip = showSwingOrderBlocksTooltip,     inline = 'ob')
+swingOrderBlocksSizeInput       = input.int(    5,          '',                         group = BLOCKS_GROUP,  minval = 1, maxval = 20,                       inline = 'ob') 
+orderBlockFilterInput         = input.string( 'Atr',      'Order Block Filter',       group = BLOCKS_GROUP,  tooltip = orderBlockFilterTooltip,         options = [ATR, RANGE])
+orderBlockMitigationInput       = input.string( HIGHLOW,    'Order Block Mitigation',   group = BLOCKS_GROUP,  tooltip = orderBlockMitigationTooltip,     options = [CLOSE,HIGHLOW])
+internalBullishOrderBlockColor  = input.color(color.new(#3179f5, 80), 'Internal Bullish OB',   group = BLOCKS_GROUP)
+internalBearishOrderBlockColor  = input.color(color.new(#f77c80, 80), 'Internal Bearish OB',   group = BLOCKS_GROUP)
+swingBullishOrderBlockColor     = input.color(color.new(#1848cc, 80), 'Bullish OB',            group = BLOCKS_GROUP)
+swingBearishOrderBlockColor     = input.color(color.new(#b22833, 80), 'Bearish OB',            group = BLOCKS_GROUP)
+
+showEqualHighsLowsInput         = input(        true,       'Equal High/Low',           group = EQUAL_GROUP,   tooltip = showEqualHighsLowsTooltip)
+equalHighsLowsLengthInput       = input.int(    3,          'Bars Confirmation',        group = EQUAL_GROUP,   tooltip = equalHighsLowsLengthTooltip,     minval = 1)
+equalHighsLowsThresholdInput    = input.float(  0.1,        'Threshold',                group = EQUAL_GROUP,   tooltip = equalHighsLowsThresholdTooltip,  minval = 0, maxval = 0.5, step = 0.1)
+equalHighsLowsSizeInput         = input.string( TINY,       'Label Size',               group = EQUAL_GROUP,   options = [TINY,SMALL,NORMAL])
+
+showFairValueGapsInput        = input(        false,      'Fair Value Gaps',          group = GAPS_GROUP,    tooltip = showFairValueGapsTooltip)
+fairValueGapsThresholdInput     = input(        true,       'Auto Threshold',           group = GAPS_GROUP,    tooltip = fairValueGapsThresholdTooltip)
+fairValueGapsTimeframeInput     = input.timeframe('',       'Timeframe',                group = GAPS_GROUP,    tooltip = fairValueGapsTimeframeTooltip)
+fairValueGapsBullColorInput     = input.color(color.new(#00ff68, 70), 'Bullish FVG' , group = GAPS_GROUP)
+fairValueGapsBearColorInput     = input.color(color.new(#ff0008, 70), 'Bearish FVG' , group = GAPS_GROUP)
+fairValueGapsExtendInput        = input.int(    1,          'Extend FVG',               group = GAPS_GROUP,    tooltip = fairValueGapsExtendTooltip,      minval = 0)
+
+showDailyLevelsInput          = input(        false,      'Daily',   group = LEVELS_GROUP,  inline = 'daily')
+dailyLevelsStyleInput         = input.string( SOLID,      '',        group = LEVELS_GROUP,  inline = 'daily',   options = [SOLID,DASHED,DOTTED])
+dailyLevelsColorInput         = input(        BLUE,       '',        group = LEVELS_GROUP,  inline = 'daily')
+showWeeklyLevelsInput         = input(        false,      'Weekly',  group = LEVELS_GROUP,  inline = 'weekly')
+weeklyLevelsStyleInput        = input.string( SOLID,      '',        group = LEVELS_GROUP,  inline = 'weekly',  options = [SOLID,DASHED,DOTTED])
+weeklyLevelsColorInput        = input(        BLUE,       '',        group = LEVELS_GROUP,  inline = 'weekly')
+showMonthlyLevelsInput        = input(        false,      'Monthly',   group = LEVELS_GROUP,  inline = 'monthly')
+monthlyLevelsStyleInput       = input.string( SOLID,      '',        group = LEVELS_GROUP,  inline = 'monthly', options = [SOLID,DASHED,DOTTED])
+monthlyLevelsColorInput       = input(        BLUE,       '',        group = LEVELS_GROUP,  inline = 'monthly')
+
+showPremiumDiscountZonesInput   = input(        true,       'Premium/Discount Zones',   group = ZONES_GROUP , tooltip = showPremiumDiscountZonesTooltip)
+premiumZoneColorInput         = input.color(  RED,        'Premium Zone',             group = ZONES_GROUP)
+equilibriumZoneColorInput     = input.color(  GRAY,       'Equilibrium Zone',         group = ZONES_GROUP)
+discountZoneColorInput        = input.color(  GREEN,      'Discount Zone',            group = ZONES_GROUP)
+
+//---------------------------------------------------------------------------------------------------------------------}
+//DATA STRUCTURES & VARIABLES
+//---------------------------------------------------------------------------------------------------------------------{
+type alerts
+    bool internalBullishBOS
+    bool internalBearishBOS
+    bool internalBullishCHoCH
+    bool internalBearishCHoCH
+    bool swingBullishBOS
+    bool swingBearishBOS
+    bool swingBullishCHoCH
+    bool swingBearishCHoCH
+    bool internalBullishOrderBlock
+    bool internalBearishOrderBlock
+    bool swingBullishOrderBlock
+    bool swingBearishOrderBlock
+    bool equalHighs
+    bool equalLows
+    bool bullishFairValueGap
+    bool bearishFairValueGap
+    // Enhanced alerts
+    bool highProbabilityLong
+    bool highProbabilityShort
+    bool gapDetected
+    bool confluenceAlert
+
+type trailingExtremes
+    float top
+    float bottom
+    int barTime
+    int barIndex
+    int lastTopTime
+    int lastBottomTime
+
+type fairValueGap
+    float top
+    float bottom
+    int bias
+    box topBox
+    box bottomBox
+
+type trend
+    int bias 
+
+type equalDisplay
+    line l_ine = na
+    label l_abel = na
+
+type pivot
+    float currentLevel
+    float lastLevel
+    bool crossed
+    int barTime = time
+    int barIndex = bar_index
+
+type orderBlock
+    float barHigh
+    float barLow
+    int barTime
+    int bias
+    string status = 'Unmitigated'
+    bool is_hp = false
+    float volume = 0.0
+    float confluenceScore = 0.0
+    string confluenceReason = ""
+    bool isHighProbability = false
+
+// Enhanced structures for new features
+type gapInfo
+    float gapSize
+    float gapStart
+    float gapEnd
+    int gapTime
+    string gapType
+    bool filled = false
+    int   startBar
+    int   endBar
+    float gapHigh
+    float gapLow
+    bool  isFilled
+
+type tradeSignal
+    string direction
+    float entryPrice
+    float stopLoss
+    float takeProfit
+    float riskReward
+    int signalTime
+    float confluenceScore
+    string reason
+
+type performanceMetrics
+    int totalTrades = 0
+    int winningTrades = 0
+    int losingTrades = 0
+    float totalPnL = 0.0
+    float winRate = 0.0
+    float avgWin = 0.0
+    float avgLoss = 0.0
+    float maxDrawdown = 0.0
+    float profitFactor = 0.0
+
+type riskManagement
+    float accountSize = 10000.0
+    float riskPerTrade = 0.0
+    float positionSize = 0.0
+    float dynamicStopLoss = 0.0
+    float dynamicTakeProfit = 0.0
+
+var pivot swingHigh = pivot.new()
+var pivot swingLow = pivot.new()
+var pivot internalHigh = pivot.new()
+var pivot internalLow = pivot.new()
+var pivot equalHigh = pivot.new()
+var pivot equalLow = pivot.new()
+var trend swingTrend = trend.new()
+var trend internalTrend = trend.new()
+var equalDisplay equalHighDisplay = equalDisplay.new()
+var equalDisplay equalLowDisplay = equalDisplay.new()
+var array<fairValueGap> fairValueGaps = array.new<fairValueGap>()
+var array<float> parsedHighs = array.new<float>()
+var array<float> parsedLows = array.new<float>()
+var array<float> highs = array.new<float>()
+var array<float> lows = array.new<float>()
+var array<int> times = array.new<int>()
+var trailingExtremes trailing = trailingExtremes.new()
+var array<orderBlock> swingOrderBlocks = array.new<orderBlock>()
+var array<orderBlock> internalOrderBlocks = array.new<orderBlock>()
+var array<box> swingOrderBlocksBoxes = array.new<box>()
+var array<box> internalOrderBlocksBoxes = array.new<box>()
+
+// Enhanced variables for new features
+var array<gapInfo> detectedGaps = array.new<gapInfo>()
+var array<tradeSignal> activeSignals = array.new<tradeSignal>()
+var performanceMetrics metrics = performanceMetrics.new()
+var riskManagement riskMgmt = riskManagement.new()
+var array<float> volumeArray = array.new<float>()
+
+// Performance optimization variables
+
+
+var swingBullishColor = styleInput == MONOCHROME ? MONO_BULLISH : swingBullColorInput
+var swingBearishColor = styleInput == MONOCHROME ? MONO_BEARISH : swingBearColorInput
+var fairValueGapBullishColor = styleInput == MONOCHROME ? color.new(MONO_BULLISH, 70) : fairValueGapsBullColorInput
+var fairValueGapBearishColor = styleInput == MONOCHROME ? color.new(MONO_BEARISH, 70) : fairValueGapsBearColorInput
+var premiumZoneColor = styleInput == MONOCHROME ? MONO_BEARISH : premiumZoneColorInput
+var discountZoneColor = styleInput == MONOCHROME ? MONO_BULLISH : discountZoneColorInput 
+varip int currentBarIndex = bar_index
+varip int lastBarIndex = bar_index
+var int lastCleanupBar = bar_index      // Menyimpan bar terakhir saat cleanup dilakukan
+var int updateCounter   = 0             // Counter untuk frekuensi update
+
+alerts currentAlerts = alerts.new()
+var initialTime = time
+
+if barstate.isfirst
+    if showSwingOrderBlocksInput
+        for i = 1 to swingOrderBlocksSizeInput
+            swingOrderBlocksBoxes.push(box.new(na, na, na, na, xloc=xloc.bar_time, extend=extend.right))
+    if showInternalOrderBlocksInput
+        for i = 1 to internalOrderBlocksSizeInput
+            internalOrderBlocksBoxes.push(box.new(na, na, na, na, xloc=xloc.bar_time, extend=extend.right))
+
+bearishOrderBlockMitigationSource = orderBlockMitigationInput == CLOSE ? close : high
+bullishOrderBlockMitigationSource = orderBlockMitigationInput == CLOSE ? close : low
+atrMeasure = ta.atr(200)
+volatilityMeasure = orderBlockFilterInput == ATR ? atrMeasure : ta.cum(ta.tr) / bar_index
+highVolatilityBar = high - low >= 2 * volatilityMeasure
+parsedHigh = highVolatilityBar ? low : high
+parsedLow = highVolatilityBar ? high : low
+
+parsedHighs.push(parsedHigh)
+parsedLows.push(parsedLow)
+highs.push(high)
+lows.push(low)
+times.push(time)
+volumeArray.push(volume)
+
+// Performance optimization: limit array sizes
+if enableMemoryOptInput
+    if parsedHighs.size() > maxHistoryBarsInput
+        parsedHighs.shift()
+        parsedLows.shift()
+        highs.shift()
+        lows.shift()
+        times.shift()
+        volumeArray.shift()
+
+//---------------------------------------------------------------------------------------------------------------------}
+//PERFORMANCE OPTIMIZATION FUNCTIONS
+//---------------------------------------------------------------------------------------------------------------------{
+
+newGap(startBar, endBar, gapHigh, gapLow) =>
+    gapDir = gapHigh >= gapLow ? "RANGE" : "UNKNOWN"
+    gapInfo.new(startBar, endBar, gapHigh, gapLow, gapDir, false)
+
+newSignal(id, barIndex, entry, stop, target, direction) =>
+    tradeSignal.new(id, barIndex, entry, stop, target, direction, true)
+
+customATR(len) =>
+    tr = math.max(high - low, math.abs(high - close[1]), math.abs(low - close[1]))
+    ta.rma(tr, len)
+
+if barstate.isnew
+    gHigh = math.max(high, high[1])
+    gLow  = math.min(low,  low[1])
+    array.push(detectedGaps, newGap(bar_index, bar_index, gHigh, gLow))
+
+    sigId  = "S" + str.tostring(bar_index)
+    entry  = close
+    // Perbaikan utamanya di sini: gunakan ta.atr(14)
+    volatility = ta.atr(14)
+    // Atau pakai customATR(14) bila mau
+    stop    = entry - (volatility * 0.5)
+    target  = entry + (volatility * 1.0)
+    dir     = close > open ? 1 : -1
+    array.push(activeSignals, newSignal(sigId, bar_index, entry, stop, target, dir))
+
+// ---- Monitoring ----
+plot(array.size(detectedGaps),  "Gaps Count",    color = color.new(color.orange, 0))
+plot(array.size(activeSignals), "Signals Count", color = color.new(color.teal, 0))
+
+lastIdx = array.size(detectedGaps) - 1
+if lastIdx >= 0
+    g = array.get(detectedGaps, lastIdx)
+    isFilledNow = close <= g.gapLow or close >= g.gapHigh
+    if isFilledNow and not g.isFilled
+        gNew = gapInfo.new(g.startBar, g.endBar, g.gapHigh, g.gapLow, g.gapType, true)
+        array.set(detectedGaps, lastIdx, gNew)
+
+plot(array.size(detectedGaps), "Gaps Count")
+
+
+// Internal cleanup (no params)
+cleanupArraysInternal() =>
+    var int lastCleanupBar = na
+    if na(lastCleanupBar)
+        lastCleanupBar := bar_index
+    if enableMemoryOptInput and bar_index - lastCleanupBar >= arrayCleanupFreqInput
+        if array.size(detectedGaps) > maxGapsStoredInput
+            // Pertahankan GAP TERBARU -> buang yang lama
+            while array.size(detectedGaps) > keepGapsAfterTrimInput
+                array.shift(detectedGaps)
+        if array.size(activeSignals) > maxSignalsStoredInput
+            while array.size(activeSignals) > keepSignalsAfterTrim
+                array.shift(activeSignals)
+        lastCleanupBar := bar_index
+    0
+
+cleanupArraysInternal()
+
+// =======================
+// FUNGSI: shouldUpdate (state internal counter)
+// =======================
+shouldUpdate() =>
+    var int counter = 0
+    counter += 1
+    if counter >= updateFrequencyInput
+        counter := 0
+        true
+    else
+        false
+
+// =======================
+// PEMANGGILAN TIAP BAR
+// =======================
+cleanupArraysInternal()  // cukup panggil; internal logic yang memutuskan
+logicTick = shouldUpdate()
+
+// Plot untuk memantau
+plot(array.size(detectedGaps), "Gaps Count", color = color.new(color.orange, 0))
+plot(array.size(activeSignals), "Signals Count", color = color.new(color.teal, 0))
+plot(logicTick ? 1 : 0, "Logic Tick", style = plot.style_columns, color = color.new(color.green, 60))
+
+
+//---------------------------------------------------------------------------------------------------------------------}
+//ENHANCED ORDER BLOCK FUNCTIONS
+//---------------------------------------------------------------------------------------------------------------------{
+// @function Calculate volume confirmation for order block
+getVolumeConfirmation(int startIdx, int endIdx) =>
+    if not volumeConfirmationInput or volumeArray.size() == 0
+        true
+    else
+        avgVol = 0.0
+        obVol = 0.0
+        count = 0
+        for i = math.max(0, startIdx - 20) to math.min(volumeArray.size() - 1, startIdx)
+            avgVol += volumeArray.get(i)
+            count += 1
+        avgVol := count > 0 ? avgVol / count : 0
+        
+        for i = startIdx to math.min(volumeArray.size() - 1, endIdx)
+            obVol += volumeArray.get(i)
+        obCount = endIdx - startIdx + 1
+        obVol := obCount > 0 ? obVol / obCount : 0
+        
+        obVol >= avgVol * volumeThresholdInput
+
+// @function Calculate confluence score for order block
+calculateConfluenceScore(orderBlock ob, bool isInternal) =>
+    score = 0.0
+    reason = ""
+    
+    // Base score for order block type
+    score += isInternal ? 2.0 : 3.0
+    reason += isInternal ? "Internal OB(2) " : "Swing OB(3) "
+    
+    // Volume confirmation
+    if getVolumeConfirmation(0, 5)  // Simplified for this example
+        score += 2.0
+        reason += "Volume(2) "
+    
+    // ATR-based volatility factor
+    atrFactor = (ob.barHigh - ob.barLow) / atrMeasure
+    if atrFactor > 1.5
+        score += 1.5
+        reason += "HighATR(1.5) "
+    else if atrFactor > 1.0
+        score += 1.0
+        reason += "MedATR(1) "
+    
+    // Position relative to swing points
+    if ob.bias == BULLISH and ob.barLow <= swingLow.currentLevel * 1.001
+        score += 1.5
+        reason += "SwingLow(1.5) "
+    else if ob.bias == BEARISH and ob.barHigh >= swingHigh.currentLevel * 0.999
+        score += 1.5
+        reason += "SwingHigh(1.5) "
+    
+    // Premium/Discount zone factor
+    if showPremiumDiscountZonesInput
+        eq = math.avg(trailing.top, trailing.bottom)
+        if ob.bias == BULLISH and ob.barLow < eq
+            score += 1.0
+            reason += "Discount(1) "
+        else if ob.bias == BEARISH and ob.barHigh > eq
+            score += 1.0
+            reason += "Premium(1) "
+    
+    // Multi-timeframe confluence
+    if multiTimeframeInput
+        score += 0.5
+        reason += "MTF(0.5) "
+    
+    [score, reason]
+
+// @function Detect gaps (for stock market)
+detectGaps() =>
+    if enableStockFeaturesInput and gapDetectionInput and barstate.isconfirmed
+        gapSize = math.abs(open - close[1]) / close[1] * 100
+        if gapSize >= gapThresholdInput
+            gapType = open > close[1] ? "Gap Up" : "Gap Down"
+            gap = gapInfo.new(gapSize, close[1], open, time, gapType)
+            detectedGaps.unshift(gap)
+            currentAlerts.gapDetected := true
+            
+            // Limit gaps array size
+            if detectedGaps.size() > 10
+                detectedGaps.pop()
+
+//---------------------------------------------------------------------------------------------------------------------}
+//RISK MANAGEMENT FUNCTIONS  
+//---------------------------------------------------------------------------------------------------------------------{
+// @function Calculate dynamic stop loss
+calculateDynamicStopLoss(float entryPrice, int bias) =>
+    if not enableRiskMgmtInput or not dynamicStopLossInput
+        na
+    else
+        atrValue = atrMeasure
+        if bias == BULLISH
+            entryPrice - (atrValue * 2.0)
+        else
+            entryPrice + (atrValue * 2.0)
+
+// @function Calculate take profit based on risk/reward ratio
+calculateTakeProfit(float entryPrice, float stopLoss, int bias) =>
+    if not enableRiskMgmtInput or na(stopLoss)
+        na
+    else
+        riskAmount = math.abs(entryPrice - stopLoss)
+        rewardAmount = riskAmount * riskRewardRatioInput
+        if bias == BULLISH
+            entryPrice + rewardAmount
+        else
+            entryPrice - rewardAmount
+
+// @function Calculate position size based on risk
+calculatePositionSize(float entryPrice, float stopLoss) =>
+    if not enableRiskMgmtInput or not enablePositionSizingInput or na(stopLoss)
+        0.0
+    else
+        riskAmount = math.abs(entryPrice - stopLoss)
+        dollarRisk = riskMgmt.accountSize * (maxRiskPercentInput / 100)
+        dollarRisk / riskAmount
+
+//---------------------------------------------------------------------------------------------------------------------}
+//ENTRY/EXIT SYSTEM FUNCTIONS
+//---------------------------------------------------------------------------------------------------------------------{
+// @function Generate trade signal based on order block interaction
+generateTradeSignal(orderBlock ob) =>
+    signal = tradeSignal.new()
+    
+    if ob.bias == BULLISH
+        // Bullish signal conditions
+        entryCondition = switch entryConfirmationInput
+            'Touch' => low <= ob.barHigh and low >= ob.barLow
+            'Close Above/Below' => close > ob.barHigh
+            'Body Close' => math.min(open, close) > ob.barHigh
+            => false
+            
+        if entryCondition
+            signal.direction := "LONG"
+            signal.entryPrice := ob.barHigh
+            signal.stopLoss := calculateDynamicStopLoss(signal.entryPrice, BULLISH)
+            signal.takeProfit := calculateTakeProfit(signal.entryPrice, signal.stopLoss, BULLISH)
+            signal.signalTime := time
+            signal.confluenceScore := ob.confluenceScore
+            signal.reason := ob.confluenceReason
+            
+            if not na(signal.stopLoss)
+                signal.riskReward := math.abs(signal.takeProfit - signal.entryPrice) / math.abs(signal.entryPrice - signal.stopLoss)
+    else
+        // Bearish signal conditions  
+        entryCondition = switch entryConfirmationInput
+            'Touch' => high >= ob.barLow and high <= ob.barHigh
+            'Close Above/Below' => close < ob.barLow
+            'Body Close' => math.max(open, close) < ob.barLow
+            => false
+            
+        if entryCondition
+            signal.direction := "SHORT"
+            signal.entryPrice := ob.barLow
+            signal.stopLoss := calculateDynamicStopLoss(signal.entryPrice, BEARISH)
+            signal.takeProfit := calculateTakeProfit(signal.entryPrice, signal.stopLoss, BEARISH)
+            signal.signalTime := time
+            signal.confluenceScore := ob.confluenceScore
+            signal.reason := ob.confluenceReason
+            
+            if not na(signal.stopLoss)
+                signal.riskReward := math.abs(signal.takeProfit - signal.entryPrice) / math.abs(signal.entryPrice - signal.stopLoss)
+    
+    signal
+
+//---------------------------------------------------------------------------------------------------------------------}
+//BACKTESTING AND PERFORMANCE FUNCTIONS
+//---------------------------------------------------------------------------------------------------------------------{
+// @function Update performance metrics
+updatePerformanceMetrics(tradeSignal signal, bool isWin, float pnl) =>
+    if trackPerformanceInput
+        metrics.totalTrades += 1
+        if isWin
+            metrics.winningTrades += 1
+            metrics.avgWin := (metrics.avgWin * (metrics.winningTrades - 1) + pnl) / metrics.winningTrades
+        else
+            metrics.losingTrades += 1
+            metrics.avgLoss := (metrics.avgLoss * (metrics.losingTrades - 1) + pnl) / metrics.losingTrades
+        
+        metrics.totalPnL += pnl
+        metrics.winRate := metrics.totalTrades > 0 ? metrics.winningTrades / metrics.totalTrades * 100 : 0
+        metrics.profitFactor := metrics.avgLoss != 0 ? math.abs(metrics.avgWin / metrics.avgLoss) : 0
+
+// @function Display performance metrics table
+showPerformanceTable() =>
+    if showMetricsTableInput and barstate.islast
+        var table metricsTable = table.new(position.top_right, 2, 8, bgcolor = color.white, border_width = 1)
+        table.cell(metricsTable, 0, 0, "Metric", text_color = color.black, bgcolor = color.gray)
+        table.cell(metricsTable, 1, 0, "Value", text_color = color.black, bgcolor = color.gray)
+        table.cell(metricsTable, 0, 1, "Total Trades", text_color = color.black)
+        table.cell(metricsTable, 1, 1, str.tostring(metrics.totalTrades), text_color = color.black)
+        table.cell(metricsTable, 0, 2, "Win Rate", text_color = color.black)
+        table.cell(metricsTable, 1, 2, str.tostring(metrics.winRate, "#.##") + "%", text_color = color.black)
+        table.cell(metricsTable, 0, 3, "Total P&L", text_color = color.black)
+        table.cell(metricsTable, 1, 3, str.tostring(metrics.totalPnL, "#.##"), text_color = color.black)
+        table.cell(metricsTable, 0, 4, "Avg Win", text_color = color.black)
+        table.cell(metricsTable, 1, 4, str.tostring(metrics.avgWin, "#.##"), text_color = color.black)
+        table.cell(metricsTable, 0, 5, "Avg Loss", text_color = color.black)
+        table.cell(metricsTable, 1, 5, str.tostring(metrics.avgLoss, "#.##"), text_color = color.black)
+        table.cell(metricsTable, 0, 6, "Profit Factor", text_color = color.black)
+        table.cell(metricsTable, 1, 6, str.tostring(metrics.profitFactor, "#.##"), text_color = color.black)
+
+//---------------------------------------------------------------------------------------------------------------------}
+//USER-DEFINED FUNCTIONS
+//---------------------------------------------------------------------------------------------------------------------{
+leg(int size) =>
+    var leg = 0
+    newLegHigh = high[size] > ta.highest(size)
+    newLegLow = low[size] < ta.lowest(size)
+    if newLegHigh
+        leg := BEARISH_LEG
+    else if newLegLow
+        leg := BULLISH_LEG
+    leg
+
+startOfNewLeg(int leg) => ta.change(leg) != 0
+startOfBearishLeg(int leg) => ta.change(leg) == -1
+startOfBullishLeg(int leg) => ta.change(leg) == 1
+
+drawLabel(int labelTime, float labelPrice, string tag, color labelColor, string labelStyle) =>
+    var label l = na
+    if modeInput == PRESENT
+        l.delete()
+    l := label.new(chart.point.new(labelTime, na, labelPrice), tag, xloc.bar_time, color=color(na), textcolor=labelColor, style=labelStyle, size=size.small)
+
+drawEqualHighLow(pivot p, float level, int size, bool isHigh) =>
+    d = isHigh ? equalHighDisplay : equalLowDisplay
+    tag = isHigh ? 'EQH' : 'EQL'
+    clr = isHigh ? swingBearishColor : swingBullishColor
+    style = isHigh ? label.style_label_down : label.style_label_up
+    if modeInput == PRESENT
+        d.l_ine.delete()
+        d.l_abel.delete()
+    d.l_ine := line.new(chart.point.new(p.barTime, na, p.currentLevel), chart.point.new(time[size], na, level), xloc=xloc.bar_time, color=clr, style=line.style_dotted)
+    pos = math.round(0.5 * (p.barIndex + bar_index - size))
+    d.l_abel := label.new(chart.point.new(na, pos, level), tag, xloc.bar_index, color=color(na), textcolor=clr, style=style, size=equalHighsLowsSizeInput)
+
+getCurrentStructure(int size, bool isEql, bool isInternal) =>
+    l = leg(size)
+    isNew = startOfNewLeg(l)
+    isLow = startOfBullishLeg(l)
+    isHigh = startOfBearishLeg(l)
+    if isNew
+        if isLow
+            p = isEql ? equalLow : isInternal ? internalLow : swingLow
+            if isEql and math.abs(p.currentLevel - low[size]) < equalHighsLowsThresholdInput * atrMeasure
+                drawEqualHighLow(p, low[size], size, false)
+            p.lastLevel := p.currentLevel
+            p.currentLevel := low[size]
+            p.crossed := false
+            p.barTime := time[size]
+            p.barIndex := bar_index[size]
+            if not isEql and not isInternal
+                trailing.bottom := p.currentLevel
+                trailing.barTime := p.barTime
+                trailing.barIndex := p.barIndex
+                trailing.lastBottomTime := p.barTime
+            if showSwingsInput and not isInternal and not isEql
+                drawLabel(time[size], p.currentLevel, p.currentLevel < p.lastLevel ? 'LL' : 'HL', swingBullishColor, label.style_label_up)
+        else
+            p = isEql ? equalHigh : isInternal ? internalHigh : swingHigh
+            if isEql and math.abs(p.currentLevel - high[size]) < equalHighsLowsThresholdInput * atrMeasure
+                drawEqualHighLow(p, high[size], size, true)
+            p.lastLevel := p.currentLevel
+            p.currentLevel := high[size]
+            p.crossed := false
+            p.barTime := time[size]
+            p.barIndex := bar_index[size]
+            if not isEql and not isInternal
+                trailing.top := p.currentLevel
+                trailing.barTime := p.barTime
+                trailing.barIndex := p.barIndex
+                trailing.lastTopTime := p.barTime
+            if showSwingsInput and not isInternal and not isEql
+                drawLabel(time[size], p.currentLevel, p.currentLevel > p.lastLevel ? 'HH' : 'LH', swingBearishColor, label.style_label_down)
+
+drawStructure(pivot p, string tag, color clr, string lStyle, string labStyle, string size) =>
+    var line l = line.new(na, na, na, na)
+    var label lab = label.new(na, na)
+    if modeInput == PRESENT
+        l.delete()
+        lab.delete()
+    l := line.new(chart.point.new(p.barTime, na, p.currentLevel), chart.point.new(time, na, p.currentLevel), xloc.bar_time, color=clr, style=lStyle)
+    lab := label.new(chart.point.new(na, math.round(0.5 * (p.barIndex + bar_index)), p.currentLevel), tag, xloc.bar_index, color=color(na), textcolor=clr, style=labStyle, size=size)
+
+
+
+
+// Konstanta status (pastikan sudah dideklarasikan satu kali di global)
+partialMitigationThresholdInput = input.float(0.33, 'Partial Mitigation Threshold', minval = 0.0, maxval = 1.0, step = 0.01)
+
+var int STATUS_ACTIVE    = 0
+var int STATUS_PARTIAL   = 1
+var int STATUS_MITIGATED = 2
+var int STATUS_INVALID   = 3
+
+// Asumsi struktur orderBlock:
+// type orderBlock
+//     float barHigh
+//     float barLow
+//     int   barTime
+//     int   bias          // BEARISH / BULLISH
+//     int   status        // 0..3
+//     float mitigationDepth
+//     bool  zoneEntered
+//     int   entryTime
+//     float partialMitigationLevel
+
+// =============================
+// FUNGSI: Hitung dua depth
+// =============================
+// Mengembalikan dua nilai: depthBear (penetrasi dari sisi bawah zona bearish)
+// dan depthBull (penetrasi dari sisi atas zona bullish)
+calcMitigationDepth(high_, low_, obHigh, obLow) =>
+    zoneRange = math.max(obHigh - obLow, syminfo.mintick)
+    depthBear = (high_ - obLow) / zoneRange
+    depthBull = (obHigh - low_) / zoneRange
+    if depthBear < 0
+        depthBear := 0
+    if depthBull < 0
+        depthBull := 0
+    [depthBear, depthBull]
+
+// =============================
+// FUNGSI: Update Order Blocks
+// =============================
+// Keterangan:
+// - internal: apakah memproses internalOrderBlocks atau swingOrderBlocks
+// - Fungsi ini memodifikasi array secara in-place (side-effect)
+// - Return diset ke 0 agar tipe konsisten (tidak dipakai di luar)
+updateOrderBlocks(internal) =>
+    blocks = internal ? internalOrderBlocks : swingOrderBlocks
+
+    // Loop dari belakang untuk aman ketika remove
+    for i = blocks.size() - 1 to 0
+        b = blocks.get(i)
+
+        // Ambil depth dulu (1x per blok per bar)
+        [depthBear, depthBull] = calcMitigationDepth(high, low, b.barHigh, b.barLow)
+
+        if b.bias == BEARISH
+            // Deteksi apakah harga menyentuh zona
+            inZone = high >= b.barLow and low <= b.barHigh
+            if inZone and not b.zoneEntered
+                b.zoneEntered := true
+                b.entryTime   := time
+
+            depth = depthBear
+            b.mitigationDepth := math.max(b.mitigationDepth, depth)
+
+            // Transition ke PARTIAL
+            if b.status == STATUS_ACTIVE and b.mitigationDepth >= partialMitigationThresholdInput
+                b.status := STATUS_PARTIAL
+
+            // Transition ke MITIGATED (penetrasi penuh: depth >= 1)
+            if b.mitigationDepth >= 1
+                b.status := STATUS_MITIGATED
+
+            // Invalidasi contoh (sesuaikan definisi Anda)
+            if bearishOrderBlockMitigationSource > b.barHigh
+                b.status := STATUS_INVALID
+
+        else if b.bias == BULLISH
+            inZone = low <= b.barHigh and high >= b.barLow
+            if inZone and not b.zoneEntered
+                b.zoneEntered := true
+                b.entryTime   := time
+
+            depth = depthBull
+            b.mitigationDepth := math.max(b.mitigationDepth, depth)
+
+            if b.status == STATUS_ACTIVE and b.mitigationDepth >= partialMitigationThresholdInput
+                b.status := STATUS_PARTIAL
+
+            if b.mitigationDepth >= 1
+                b.status := STATUS_MITIGATED
+
+            if bullishOrderBlockMitigationSource < b.barLow
+                b.status := STATUS_INVALID
+
+        // Remove hanya jika INVALID (MITIGATED tetap dipertahankan untuk referensi)
+        if b.status == STATUS_INVALID
+            blocks.remove(i)
+        else
+            blocks.set(i, b)
+
+    0  // Nilai dummy agar return type konsisten (int)
+
+// =============================
+// MAPPING STATUS KE STRING (untuk label / display)
+// =============================
+// Contoh fungsi util (opsional)
+statusToText(status) =>
+    status == STATUS_ACTIVE    ? "ACTIVE" :
+     status == STATUS_PARTIAL   ? "PARTIAL" :
+      status == STATUS_MITIGATED ? "MITIGATED" :
+       status == STATUS_INVALID   ? "INVALID" : "UNKNOWN"
+
+storeOrderBlock(pivot p_ivot, bool internal, int bias) =>
+    // Deklarasi typed variabel agar na valid
+    orderBlock ob = na
+
+    // Cek apakah tipe blok ini ditampilkan
+    if (not internal and showSwingOrderBlocksInput) or (internal and showInternalOrderBlocksInput)
+        // Pilih array sumber sesuai bias
+        srcArr = bias == BEARISH ? parsedHighs.slice(p_ivot.barIndex, bar_index) : parsedLows.slice(p_ivot.barIndex, bar_index)
+
+        // Pastikan slice tidak kosong
+        if srcArr.size() > 0
+            // Cari indeks relatif nilai ekstrem
+            extremeRelIdx = bias == BEARISH ? srcArr.indexof(srcArr.max()) : srcArr.indexof(srcArr.min())
+            // Indeks absolut di deret utama
+            idx = p_ivot.barIndex + extremeRelIdx
+
+            // Validasi indeks terhadap arrays sumber
+            canBuild =
+                 idx >= 0 and
+                 idx < parsedHighs.size() and
+                 idx < parsedLows.size() and
+                 idx < times.size()
+
+            if canBuild
+                // Bangun instance orderBlock (gunakan konstruktor/fungsi yang valid di kode Anda)
+                ob := orderBlock.new(parsedHighs.get(idx), parsedLows.get(idx), times.get(idx), bias)
+
+                // Set properti tambahan (pastikan field ada di type orderBlock)
+                ob.volume := volumeArray.size() > idx ? volumeArray.get(idx) : volume
+
+                [score, reason] = calculateConfluenceScore(ob, internal)
+                ob.confluenceScore    := score
+                ob.confluenceReason   := reason
+                ob.isHighProbability  := score >= minConfluenceScoreInput
+
+                // (Opsional) High-probability tambahan berbasis struktur swing
+                if not internal
+                    if bias == BULLISH and ob.barLow  < swingLow.currentLevel
+                        ob.isHighProbability := true
+                    else if bias == BEARISH and ob.barHigh > swingHigh.currentLevel
+                        ob.isHighProbability := true
+
+                // Masukkan ke array target
+                blocks = internal ? internalOrderBlocks : swingOrderBlocks
+                if blocks.size() >= 100
+                    blocks.pop()
+                blocks.unshift(ob)
+
+    ob  // Return orderBlock atau na
+
+
+drawOrderBlocks(internal) =>
+    blocks     = internal ? internalOrderBlocks      : swingOrderBlocks
+    boxesArr   = internal ? internalOrderBlocksBoxes : swingOrderBlocksBoxes
+    maxBlocks  = internal ? internalOrderBlocksSizeInput : swingOrderBlocksSizeInput
+
+    blkCount = math.min(maxBlocks, blocks.size())
+    if blkCount == 0
+        0
+    // Pastikan jumlah box visual >= blkCount
+    if boxesArr.size() < blkCount
+        for k = boxesArr.size() to blkCount - 1
+            // Buat box dummy awal (akan di-update tiap bar)
+            // Gunakan xloc = xloc.bar_time agar koordinat time yang diberikan adalah waktu bar
+            newBx = box.new(time, high, time, low, xloc = xloc.bar_time, bgcolor = color.new(color.gray, 95), border_color = color.new(color.gray, 100))
+            boxesArr.push(newBx)
+
+        // Premium/discount equilibrium
+        eq = showPremiumDiscountZonesInput ? math.avg(trailing.top, trailing.bottom) : na
+
+        // Loop menggambar / update
+        for i = 0 to blkCount - 1
+            b  = blocks.get(i)
+
+            // Ambil box; jika ada mismatch ukuran, buat baru (perlindungan)
+            bx = i < boxesArr.size() ? boxesArr.get(i) : box.new(time, high, time, low, xloc = xloc.bar_time, bgcolor = color.new(color.gray, 95), border_color = color.new(color.gray, 100))
+
+            if i >= boxesArr.size()
+                boxesArr.push(bx)           
+
+            // Filter premium/discount (hanya untuk swing)
+            if filterPremiumDiscountInput and not internal and not na(eq)
+                isBullInDisc = (b.bias == BULLISH) and (b.barLow  < eq)
+                isBearInPrem = (b.bias == BEARISH) and (b.barHigh > eq)
+                if not isBullInDisc and not isBearInPrem
+                    // Sembunyikan box ini (opsi: set alpha tinggi)
+                    bx.set_bgcolor(color.new(color.gray, 100))
+                    bx.set_border_color(color.new(color.gray, 100))
+                    continue
+
+            // Warna Dasar
+            clr = styleInput == MONOCHROME ? (b.bias == BEARISH ? color.new(MONO_BEARISH, 80) : color.new(MONO_BULLISH, 80)) : internal ? (b.bias == BEARISH ? internalBearishOrderBlockColor : internalBullishOrderBlockColor) : (b.bias == BEARISH ? swingBearishOrderBlockColor : swingBullishOrderBlockColor)
+
+            // Redupkan jika status mitigated (pakai enumerasi, bukan string)
+            if b.status == STATUS_MITIGATED
+                clr := color.new(clr, 92)
+
+            borderClr = b.isHighProbability ? HP_BORDER_COLOR : color.new(clr, 100)
+
+            // Update koordinat box:
+            // Left = waktu blok terbentuk, Top = high blok; Right = waktu bar terakhir, Bottom = low blok
+            bx.set_lefttop(b.barTime, b.barHigh)
+            bx.set_rightbottom(time, b.barLow)
+
+            // Set style
+            bx.set_bgcolor(clr)
+            bx.set_border_color(borderClr)
+            bx.set_border_width(b.isHighProbability ? 2 : 1)
+
+            // (Opsional) Jika ingin hapus box utk STATUS_INVALID:
+            if b.status == STATUS_INVALID
+                // Sembunyikan alih-alih hapus untuk menjaga indeks konsisten
+                bx.set_bgcolor(color.new(color.black, 100))
+                bx.set_border_color(color.new(color.black, 100))
+
+            // Tampilkan label skor confluence
+            if confluenceScoreInput and not internal
+                labelText = "CS: " + str.tostring(b.confluenceScore, "#.#")
+                if b.isHighProbability
+                    labelText := "🟢 " + labelText
+                label.new(x = b.barTime, y = b.bias == BULLISH ? b.barHigh : b.barLow, text = labelText, xloc = xloc.bar_time, color = color.new(color.white, 20), textcolor = b.bias == BULLISH ? color.green : color.red, style = b.bias == BULLISH ? label.style_label_down : label.style_label_up, size = size.small)
+
+            // Generate trade signals
+            if enableEntryExitInput and not internal and b.isHighProbability
+                signal = generateTradeSignal(b)
+                if signal.direction != na
+                    activeSignals.unshift(signal)
+
+                    // Helpers
+                    futureTime = time + 10 * (time - time[1])
+                    if showEntryLevelsInput
+                        line.new(x1 = time, y1 = signal.entryPrice, x2 = futureTime, y2 = signal.entryPrice, xloc = xloc.bar_time, color = color.blue, style = line.style_dashed, width = 2)
+                    if showStopLossInput and not na(signal.stopLoss)
+                        line.new(x1 = time, y1 = signal.stopLoss, x2 = futureTime, y2 = signal.stopLoss, xloc = xloc.bar_time, color = color.red, style = line.style_dotted, width = 1)
+                    if showTakeProfitInput and not na(signal.takeProfit)
+                        line.new(x1 = time, y1 = signal.takeProfit, x2 = futureTime, y2 = signal.takeProfit, xloc = xloc.bar_time, color = color.green, style = line.style_dotted, width = 1)
+                    if showRRDisplayInput and not na(signal.riskReward)
+                        label.new(x = time, y = signal.entryPrice, text = "R:R " + str.tostring(signal.riskReward, "#.##"), xloc = xloc.bar_time, color = color.new(color.yellow, 80), textcolor = color.black, style = label.style_label_left, size = size.small)
+        0 // Nilai dummy konsisten (fungsi prosedural)
+
+displayStructure(bool isInternal) =>
+    isBullBar = true
+    isBearBar = true
+    if internalFilterConfluenceInput
+        isBullBar := high - math.max(close, open) > math.min(close, open) - low
+        isBearBar := high - math.max(close, open) < math.min(close, open) - low
+    p = isInternal ? internalHigh : swingHigh
+    t = isInternal ? internalTrend : swingTrend
+    lStyle = isInternal ? line.style_dashed : line.style_solid
+    size = isInternal ? internalStructureSize : swingStructureSize
+    extra = isInternal ? internalHigh.currentLevel != swingHigh.currentLevel and isBullBar : true
+    bullClr = styleInput == MONOCHROME ? MONO_BULLISH : isInternal ? internalBullColorInput : swingBullColorInput
+    if ta.crossover(close, p.currentLevel) and not p.crossed and extra
+        tag = t.bias == BEARISH ? CHOCH : BOS
+        if isInternal
+            currentAlerts.internalBullishCHoCH := tag == CHOCH
+            currentAlerts.internalBullishBOS := tag == BOS
+        else
+            currentAlerts.swingBullishCHoCH := tag == CHOCH
+            currentAlerts.swingBullishBOS := tag == BOS
+        p.crossed := true
+        t.bias := BULLISH
+        cond = isInternal ? showInternalsInput and (showInternalBullInput == ALL or showInternalBullInput == BOS and tag != CHOCH or showInternalBullInput == CHOCH and tag == CHOCH) : showStructureInput and (showSwingBullInput == ALL or showSwingBullInput == BOS and tag != CHOCH or showSwingBullInput == CHOCH and tag == CHOCH)
+        if cond
+            drawStructure(p, tag, bullClr, lStyle, label.style_label_down, size)
+        if (isInternal and showInternalOrderBlocksInput) or (not isInternal and showSwingOrderBlocksInput)
+            storeOrderBlock(p, isInternal, BULLISH)
+    p := isInternal ? internalLow : swingLow
+    extra := isInternal ? internalLow.currentLevel != swingLow.currentLevel and isBearBar : true
+    bearClr = styleInput == MONOCHROME ? MONO_BEARISH : isInternal ? internalBearColorInput : swingBearColorInput
+    if ta.crossunder(close, p.currentLevel) and not p.crossed and extra
+        tag = t.bias == BULLISH ? CHOCH : BOS
+        if isInternal
+            currentAlerts.internalBearishCHoCH := tag == CHOCH
+            currentAlerts.internalBearishBOS := tag == BOS
+        else
+            currentAlerts.swingBearishCHoCH := tag == CHOCH
+            currentAlerts.swingBearishBOS := tag == BOS
+        p.crossed := true
+        t.bias := BEARISH
+        cond = isInternal ? showInternalsInput and (showInternalBearInput == ALL or showInternalBearInput == BOS and tag != CHOCH or showInternalBearInput == CHOCH and tag == CHOCH) : showStructureInput and (showSwingBearInput == ALL or showSwingBearInput == BOS and tag != CHOCH or showSwingBearInput == CHOCH and tag == CHOCH)
+        if cond
+            drawStructure(p, tag, bearClr, lStyle, label.style_label_up, size)
+        if (isInternal and showInternalOrderBlocksInput) or (not isInternal and showSwingOrderBlocksInput)
+            storeOrderBlock(p, isInternal, BEARISH)
+
+fairValueGapBox(leftTime, rightTime, top, bottom, clr) => box.new(chart.point.new(leftTime, na, top), chart.point.new(rightTime + fairValueGapsExtendInput * (time - time[1]), na, bottom), xloc.bar_time, border_color=color(na), bgcolor=clr)
+
+deleteFairValueGaps() =>
+    for i = fairValueGaps.size() - 1 to 0
+        fvg = fairValueGaps.get(i)
+        if low < fvg.bottom and fvg.bias == BULLISH or high > fvg.top and fvg.bias == BEARISH
+            fvg.topBox.delete()
+            fvg.bottomBox.delete()
+            fairValueGaps.remove(i)
+
+drawFairValueGaps() =>
+    [c, o, t, h, l, t0, h2, l2] = request.security(syminfo.tickerid, fairValueGapsTimeframeInput, [close[1], open[1], time[1], high[0], low[0], time[0], high[2], low[2]], lookahead=barmerge.lookahead_off)
+    delta = o != 0 ? (c - o) / o * 100 : 0 
+    isNew = timeframe.change(fairValueGapsTimeframeInput)
+    thold = fairValueGapsThresholdInput and bar_index > 0 ? ta.cum(math.abs(isNew ? delta : 0)) / bar_index * 2 : 0
+    isBull = l > h2 and c > h2 and delta > thold and isNew
+    isBear = h < l2 and c < l2 and -delta > thold and isNew
+    if isBull
+        currentAlerts.bullishFairValueGap := true
+        fairValueGaps.unshift(fairValueGap.new(l, h2, BULLISH, fairValueGapBox(t, t0, l, math.avg(l, h2), fairValueGapBullishColor), fairValueGapBox(t, t0, math.avg(l, h2), h2, fairValueGapBullishColor)))
+    if isBear
+        currentAlerts.bearishFairValueGap := true
+        fairValueGaps.unshift(fairValueGap.new(h, l2, BEARISH, fairValueGapBox(t, t0, h, math.avg(h, l2), fairValueGapBearishColor), fairValueGapBox(t, t0, math.avg(h, l2), l2, fairValueGapBearishColor)))
+
+getStyle(s) => s == SOLID ? line.style_solid : s == DASHED ? line.style_dashed : line.style_dotted
+
+// Fungsi util opsional untuk style line (pastikan getStyle sudah ada)
+// getStyle(styleString) => line.style_solid / line.style_dashed / etc.
+
+drawLevels(tf, isSame, style, clr) =>
+    // Ambil data TF lebih tinggi / sama
+    [h_prev, l_prev, t1_prev, t_curr] = request.security(syminfo.tickerid, tf, [high[1], low[1], time[1], time], lookahead = barmerge.lookahead_on)
+
+    // Pilih nilai yang dipakai (jika sama TF, pakai current)
+    h_p  = isSame ? high : h_prev
+    l_p  = isSame ? low  : l_prev
+    t1_p = isSame ? time : t1_prev
+    t_p  = isSame ? time : t_curr
+
+    // Waktu ekstrem high/low dalam window yang direferensikan (default fallback time saat tidak ditemukan)
+    t_h = time
+    t_l = time
+
+    if not isSame
+        idx1  = times.binary_search_rightmost(t1_p)
+        idx2  = times.binary_search_rightmost(t_p)
+        arr_t = times.slice(idx1, idx2)
+        arr_h = highs.slice(idx1, idx2)
+        arr_l = lows.slice(idx1, idx2)
+
+        // Cari bar time untuk high maksimum dan low minimum di rentang itu
+        t_h := arr_t.size() > 0 ? arr_t.get(arr_h.indexof(arr_h.max())) : initialTime
+        t_l := arr_t.size() > 0 ? arr_t.get(arr_l.indexof(arr_l.min())) : initialTime
+
+    // Garis & label disimpan sebagai var agar persistent antar bar
+    var line  h_l   = na
+    var line  l_l   = na
+    var label h_lab = na
+    var label l_lab = na
+
+    // Jika pertama kali, buat objek
+    if na(h_l)
+        h_l := line.new(t_h, h_p, t_h, h_p, xloc = xloc.bar_time, extend = extend.none, color = clr, style = getStyle(style))
+    if na(l_l)
+        l_l := line.new(t_l, l_p, t_l, l_p, xloc = xloc.bar_time, extend = extend.none, color = clr, style = getStyle(style))
+    if na(h_lab)
+        h_lab := label.new(t_h, h_p, str.format("P{0}H", tf), xloc = xloc.bar_time, style = label.style_label_left, color = color.new(clr, 85), textcolor = clr)
+    if na(l_lab)
+        l_lab := label.new(t_l, l_p, str.format("P{0}L", tf), xloc = xloc.bar_time, style = label.style_label_left, color = color.new(clr, 85), textcolor = clr)
+
+    // Hitung waktu ekstensi ke depan (misal 20 bar jarak; gunakan bar spacing via time delta)
+    futureTime = time + 20 * (time - time[1])
+
+    // Update garis high
+    line.set_xy1(h_l, t_h, h_p)
+    line.set_xy2(h_l, futureTime, h_p)
+    line.set_color(h_l, clr)
+    line.set_style(h_l, getStyle(style))
+
+    // Update garis low
+    line.set_xy1(l_l, t_l, l_p)
+    line.set_xy2(l_l, futureTime, l_p)
+    line.set_color(l_l, clr)
+    line.set_style(l_l, getStyle(style))
+
+    // Update label high
+    label.set_xy(h_lab, futureTime, h_p)
+    label.set_text(h_lab, str.format("P{0}H", tf))
+    label.set_textcolor(h_lab, clr)
+    label.set_color(h_lab, color.new(clr, 85))
+
+    // Update label low
+    label.set_xy(l_lab, futureTime, l_p)
+    label.set_text(l_lab, str.format("P{0}L", tf))
+    label.set_textcolor(l_lab, clr)
+    label.set_color(l_lab, color.new(clr, 85))
+
+    // Nilai dummy untuk konsistensi (fungsi prosedural)
+    0
+
+higherTimeframe(string tf) => timeframe.in_seconds(tf) > timeframe.in_seconds(timeframe.period)
+
+updateTrailingExtremes() =>
+    trailing.top := math.max(high, trailing.top)
+    trailing.lastTopTime := trailing.top == high ? time : trailing.lastTopTime
+    trailing.bottom := math.min(low, trailing.bottom)
+    trailing.lastBottomTime := trailing.bottom == low ? time : trailing.lastBottomTime
+
+// Menggambar swing high & low (versi koordinat biasa)
+drawHighLowSwings() =>
+    // Pastikan nilai tersedia
+    validTop    = not na(trailing.top)    and not na(trailing.lastTopTime)
+    validBottom = not na(trailing.bottom) and not na(trailing.lastBottomTime)
+
+    // Waktu ekstensi ke depan (20 "bar time spans")
+    futureTime = time + 20 * (time - time[1])
+
+    // Persistent IDs
+    var line  h_l   = na
+    var line  l_l   = na
+    var label h_lab = na
+    var label l_lab = na
+
+    // Buat objek saat pertama kali
+    if na(h_l) and validTop
+        h_l := line.new(trailing.lastTopTime, trailing.top, futureTime, trailing.top, xloc = xloc.bar_time, extend = extend.none, color = swingBearishColor, style = line.style_solid, width = 1)
+    if na(l_l) and validBottom
+        l_l := line.new(trailing.lastBottomTime, trailing.bottom, futureTime, trailing.bottom, xloc = xloc.bar_time, extend = extend.none, color = swingBullishColor, style = line.style_solid, width = 1)
+    if na(h_lab) and validTop
+        h_lab := label.new(futureTime, trailing.top, swingTrend.bias == BEARISH ? "Strong High" : "Weak High", xloc = xloc.bar_time, style = label.style_label_down, textcolor = swingBearishColor, color = color.new(swingBearishColor, 85), size = size.small)
+    if na(l_lab) and validBottom
+        l_lab := label.new(futureTime, trailing.bottom, swingTrend.bias == BULLISH ? "Strong Low" : "Weak Low", xloc = xloc.bar_time, style = label.style_label_up, textcolor = swingBullishColor, color = color.new(swingBullishColor, 85), size = size.small)
+
+    // Update High
+    if validTop and not na(h_l)
+        line.set_xy1(h_l, trailing.lastTopTime, trailing.top)
+        line.set_xy2(h_l, futureTime,             trailing.top)
+        line.set_color(h_l, swingBearishColor)
+        // Label high
+        if not na(h_lab)
+            label.set_xy(h_lab, futureTime, trailing.top)
+            label.set_text(h_lab, swingTrend.bias == BEARISH ? "Strong High" : "Weak High")
+            label.set_textcolor(h_lab, swingBearishColor)
+            label.set_color(h_lab, color.new(swingBearishColor, 85))
+
+    // Update Low
+    if validBottom and not na(l_l)
+        line.set_xy1(l_l, trailing.lastBottomTime, trailing.bottom)
+        line.set_xy2(l_l, futureTime,              trailing.bottom)
+        line.set_color(l_l, swingBullishColor)
+        // Label low
+        if not na(l_lab)
+            label.set_xy(l_lab, futureTime, trailing.bottom)
+            label.set_text(l_lab, swingTrend.bias == BULLISH ? "Strong Low" : "Weak Low")
+            label.set_textcolor(l_lab, swingBullishColor)
+            label.set_color(l_lab, color.new(swingBullishColor, 85))
+
+    // Nilai dummy prosedural
+    0
+
+var int   trailing_barTime = time
+var float dummyTop         = high
+var float dummyBottom      = low
+
+getLabelStyle(s) =>
+    switch s
+        "left"  => label.style_label_left
+        "right" => label.style_label_right
+        "up"    => label.style_label_up
+        "down"  => label.style_label_down
+        => label.style_label_left
+
+drawZone(lab_lvl, lab_time, top, bottom, tag, clr, style) =>
+    var label lab = na
+    var box   b   = na
+    if na(b)
+        b := box.new(lab_time, top, lab_time, bottom,
+                     xloc = xloc.bar_time,
+                     bgcolor = color.new(clr, 80),
+                     border_color = na)
+    if na(lab)
+        lab := label.new(lab_time, lab_lvl, tag,
+                         xloc      = xloc.bar_time,
+                         style     = getLabelStyle(style),
+                         textcolor = clr,
+                         color     = color.new(clr, 85),
+                         size      = size.tiny)
+
+    box.set_lefttop(b, trailing_barTime, top)
+    box.set_rightbottom(b, time, bottom)
+    box.set_bgcolor(b, color.new(clr, 80))
+    box.set_border_color(b, na)
+
+    label.set_xy(lab, lab_time, lab_lvl)
+    label.set_text(lab, tag)
+    label.set_style(lab, getLabelStyle(style))
+    label.set_textcolor(lab, clr)
+    label.set_color(lab, color.new(clr, 85))
+
+    0
+
+drawZone((high + low)/2, time, dummyTop, dummyBottom, "Zone", color.new(color.teal, 0), "left")
+
+drawPremiumDiscountZones() =>
+    eq = math.avg(trailing.top, trailing.bottom)
+    drawZone(trailing.top, math.round(0.5 * (trailing.barIndex + last_bar_index)), trailing.top, 0.95 * trailing.top + 0.05 * trailing.bottom, 'Premium', premiumZoneColor, label.style_label_down)
+    drawZone(eq, last_bar_index, 0.525 * trailing.top + 0.475 * trailing.bottom, 0.525 * trailing.bottom + 0.475 * trailing.top, 'Equilibrium', equilibriumZoneColorInput, label.style_label_left)
+    drawZone(trailing.bottom, math.round(0.5 * (trailing.barIndex + last_bar_index)), 0.95 * trailing.bottom + 0.05 * trailing.top, trailing.bottom, 'Discount', discountZoneColor, label.style_label_up)
+
+//---------------------------------------------------------------------------------------------------------------------}
+//MUTABLE VARIABLES & EXECUTION
+//---------------------------------------------------------------------------------------------------------------------{
+parsedOpen = showTrendInput ? open : na
+candleColor = internalTrend.bias == BULLISH ? swingBullishColor : swingBearishColor
+plotcandle(parsedOpen, high, low, close, color=candleColor, wickcolor=candleColor, bordercolor=candleColor)
+
+
+// Tambah nilai baru setiap bar (contoh)
+var myValues = array.new_float()
+if barstate.isnew
+    array.push(myValues, close)
+
+// Fungsi cleanup (SATU-SATUNYA)
+// State eksternal
+
+// Satu-satunya definisi versi parameter
+cleanupArrays(lastCleanupBarIn) =>
+    // Jika waktunya cleanup
+    if bar_index - lastCleanupBarIn >= CLEANUP_INTERVAL
+        while array.size(myValues) > MAX_ARRAY_SIZE
+            array.shift(myValues)
+        bar_index   // return bar index baru
+    else
+        lastCleanupBarIn
+
+// Pemanggilan + simpan balik
+lastCleanupBar := cleanupArraysInternal()
+
+// Panggilan
+if enableMemoryOptInput
+    cleanupArraysInternal()
+
+shouldProcess = shouldUpdate()
+
+// Contoh penggunaan flag
+plotchar(shouldProcess, "Process Tick", "•", location = location.top, size = size.tiny, color = color.new(color.green, 0))
+
+if showHighLowSwingsInput or showPremiumDiscountZonesInput
+    updateTrailingExtremes()
+    if showHighLowSwingsInput
+        drawHighLowSwings()
+    if showPremiumDiscountZonesInput
+        drawPremiumDiscountZones()
+
+if showFairValueGapsInput
+    deleteFairValueGaps()
+
+// Gap detection for stocks
+if enableStockFeaturesInput and shouldProcess
+    detectGaps()
+
+getCurrentStructure(swingsLengthInput, false, false)
+getCurrentStructure(5, false, true)
+
+if showEqualHighsLowsInput
+    getCurrentStructure(equalHighsLowsLengthInput, true, false)
+
+if showInternalsInput or showStructureInput
+    displayStructure(true)
+    displayStructure(false)
+
+if showInternalOrderBlocksInput or showSwingOrderBlocksInput
+    updateOrderBlocks(true)
+    updateOrderBlocks(false)
+    drawOrderBlocks(true)
+    drawOrderBlocks(false)
+
+if showFairValueGapsInput
+    drawFairValueGaps()
+
+if showDailyLevelsInput
+    drawLevels('1D', timeframe.isintraday, dailyLevelsStyleInput, dailyLevelsColorInput)
+
+if showWeeklyLevelsInput
+    drawLevels('1W', higherTimeframe('1W'), weeklyLevelsStyleInput, weeklyLevelsColorInput)
+
+if showMonthlyLevelsInput
+    drawLevels('1M', higherTimeframe('1M'), monthlyLevelsStyleInput, monthlyLevelsColorInput)
+
+// Display performance table
+showPerformanceTable()
+
+//---------------------------------------------------------------------------------------------------------------------}
+//ADVANCED ALERTS
+//---------------------------------------------------------------------------------------------------------------------{
+if enableAdvancedAlertsInput
+    // Basic structure alerts
+    if currentAlerts.internalBullishBOS
+        alert('Internal Bullish BOS detected', alert.freq_once_per_bar)
+    if currentAlerts.internalBearishBOS
+        alert('Internal Bearish BOS detected', alert.freq_once_per_bar)
+    if currentAlerts.internalBullishCHoCH
+        alert('Internal Bullish CHoCH detected', alert.freq_once_per_bar)
+    if currentAlerts.internalBearishCHoCH
+        alert('Internal Bearish CHoCH detected', alert.freq_once_per_bar)
+    if currentAlerts.swingBullishBOS
+        alert('Swing Bullish BOS detected', alert.freq_once_per_bar)
+    if currentAlerts.swingBearishBOS
+        alert('Swing Bearish BOS detected', alert.freq_once_per_bar)
+    if currentAlerts.swingBullishCHoCH
+        alert('Swing Bullish CHoCH detected', alert.freq_once_per_bar)
+    if currentAlerts.swingBearishCHoCH
+        alert('Swing Bearish CHoCH detected', alert.freq_once_per_bar)
+    
+    // Fair Value Gap alerts
+    if currentAlerts.bullishFairValueGap
+        alert('Bullish Fair Value Gap detected', alert.freq_once_per_bar)
+    if currentAlerts.bearishFairValueGap
+        alert('Bearish Fair Value Gap detected', alert.freq_once_per_bar)
+    
+    // Gap detection alerts
+    if currentAlerts.gapDetected
+        alert('Price Gap detected', alert.freq_once_per_bar)
+    
+    // High probability setup alerts
+    if confluenceAlertsInput and highProbabilityInput
+        for signal in activeSignals
+            if signal.confluenceScore >= minConfluenceScoreInput
+                alertMessage = detailedAlertsInput ? 
+                 str.format("High Probability {0} Setup\nEntry: {1}\nConfluence: {2}\nReason: {3}", 
+                           signal.direction, signal.entryPrice, signal.confluenceScore, signal.reason) :
+                 str.format("High Probability {0} Setup", signal.direction)
+                alert(alertMessage, alert.freq_once_per_bar)
+
+//---------------------------------------------------------------------------------------------------------------------}
+//PLOT STATEMENTS
+//---------------------------------------------------------------------------------------------------------------------{
+// Plot swing structure levels for external access
+plot(swingHigh.currentLevel, 'Swing High', color=color.new(swingBearishColor, 80), display=display.none)
+plot(swingLow.currentLevel, 'Swing Low', color=color.new(swingBullishColor, 80), display=display.none)
+
+// Plot internal structure levels for external access
+plot(internalHigh.currentLevel, 'Internal High', color=color.new(internalBearColorInput, 80), display=display.none)
+plot(internalLow.currentLevel, 'Internal Low', color=color.new(internalBullColorInput, 80), display=display.none)
+
+// Plot premium/discount zones for external access
+// Perhitungan nilai (gunakan ternary untuk menghindari plot di local scope)
+eq        = showPremiumDiscountZonesInput ? math.avg(trailing.top, trailing.bottom) : na
+premTop   = showPremiumDiscountZonesInput ? trailing.top    : na
+discountB = showPremiumDiscountZonesInput ? trailing.bottom : na
+
+// Plot tersembunyi (display.none) agar bisa direferensikan indikator lain
+plot(premTop,   "Premium Top",     color = color.new(premiumZoneColor,          90), display = display.none)
+plot(eq,        "Equilibrium",     color = color.new(equilibriumZoneColorInput, 90), display = display.none)
+plot(discountB, "Discount Bottom", color = color.new(discountZoneColor,         90), display = display.none)
+
+// Plot ATR for external access
+plot(atrMeasure, 'ATR', color=color.new(color.gray, 90), display=display.none)
+
+//---------------------------------------------------------------------------------------------------------------------}
+//DEBUG AND INFORMATION DISPLAY
+//---------------------------------------------------------------------------------------------------------------------{
+if barstate.islast and enableBacktestInput
+    // Create information table
+    var table infoTable = table.new(position.bottom_right, 2, 10, bgcolor = color.new(color.white, 80), border_width = 1)
+    
+    // Header
+    table.cell(infoTable, 0, 0, "SMC Pro Info", text_color = color.black, bgcolor = color.new(color.blue, 80), text_size = size.normal)
+    table.cell(infoTable, 1, 0, "Value", text_color = color.black, bgcolor = color.new(color.blue, 80), text_size = size.normal)
+    
+    // Swing Structure
+    table.cell(infoTable, 0, 1, "Swing Trend", text_color = color.black, text_size = size.small)
+    table.cell(infoTable, 1, 1, swingTrend.bias == BULLISH ? "Bullish" : "Bearish", 
+              text_color = swingTrend.bias == BULLISH ? color.green : color.red, text_size = size.small)
+    
+    // Internal Structure  
+    table.cell(infoTable, 0, 2, "Internal Trend", text_color = color.black, text_size = size.small)
+    table.cell(infoTable, 1, 2, internalTrend.bias == BULLISH ? "Bullish" : "Bearish", 
+              text_color = internalTrend.bias == BULLISH ? color.green : color.red, text_size = size.small)
+    
+    // Order Blocks Count
+    table.cell(infoTable, 0, 3, "Swing OBs", text_color = color.black, text_size = size.small)
+    table.cell(infoTable, 1, 3, str.tostring(swingOrderBlocks.size()), text_color = color.black, text_size = size.small)
+    
+    table.cell(infoTable, 0, 4, "Internal OBs", text_color = color.black, text_size = size.small)
+    table.cell(infoTable, 1, 4, str.tostring(internalOrderBlocks.size()), text_color = color.black, text_size = size.small)
+    
+    // Fair Value Gaps
+    table.cell(infoTable, 0, 5, "FVGs", text_color = color.black, text_size = size.small)
+    table.cell(infoTable, 1, 5, str.tostring(fairValueGaps.size()), text_color = color.black, text_size = size.small)
+    
+    // Active Signals
+    table.cell(infoTable, 0, 6, "Active Signals", text_color = color.black, text_size = size.small)
+    table.cell(infoTable, 1, 6, str.tostring(activeSignals.size()), text_color = color.black, text_size = size.small)
+    
+    // ATR Value
+    table.cell(infoTable, 0, 7, "ATR", text_color = color.black, text_size = size.small)
+    table.cell(infoTable, 1, 7, str.tostring(atrMeasure, "#.####"), text_color = color.black, text_size = size.small)
+    
+    // Premium/Discount Status
+    if showPremiumDiscountZonesInput
+        eq = math.avg(trailing.top, trailing.bottom)
+        zoneStatus = close > eq * 1.01 ? "Premium" : close < eq * 0.99 ? "Discount" : "Equilibrium"
+        zoneColor = close > eq * 1.01 ? color.red : close < eq * 0.99 ? color.green : color.gray
+        table.cell(infoTable, 0, 8, "Zone", text_color = color.black, text_size = size.small)
+        table.cell(infoTable, 1, 8, zoneStatus, text_color = zoneColor, text_size = size.small)
+    
+    // Version info
+    table.cell(infoTable, 0, 9, "Version", text_color = color.black, text_size = size.tiny)
+    table.cell(infoTable, 1, 9, "SMC Pro v5.0", text_color = color.black, text_size = size.tiny)
+
+//---------------------------------------------------------------------------------------------------------------------}
+//END OF SCRIPT
+//---------------------------------------------------------------------------------------------------------------------{
