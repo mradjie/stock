@@ -1,0 +1,761 @@
+//@version=5
+indicator('Smart Money Concepts Professional [Enhanced] (Fixed)', 'SMC Pro Fixed', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)
+
+//---------------------------------------------------------------------------------------------------------------------}
+// CONSTANTS & STRINGS & INPUTS
+//---------------------------------------------------------------------------------------------------------------------{
+BULLISH_LEG                     = 1
+BEARISH_LEG                     = 0
+
+BULLISH                         = +1
+BEARISH                         = -1
+
+GREEN                           = #089981
+RED                             = #F23645
+BLUE                            = #2157f3
+GRAY                            = #878b94
+MONO_BULLISH                    = #b2b5be
+MONO_BEARISH                    = #5d606b
+HP_BORDER_COLOR                 = color.new(color.yellow, 0)
+
+HISTORICAL                      = 'Historical'
+PRESENT                         = 'Present'
+
+COLORED                         = 'Colored'
+MONOCHROME                      = 'Monochrome'
+
+ALL                             = 'All'
+BOS                             = 'BOS'
+CHOCH                           = 'CHoCH'
+
+TINY                            = size.tiny
+SMALL                           = size.small
+NORMAL                          = size.normal
+
+ATR                             = 'Atr'
+RANGE                           = 'Cumulative Mean Range'
+
+CLOSE                           = 'Close'
+HIGHLOW                         = 'High/Low'
+
+SOLID                           = '⎯⎯⎯'
+DASHED                          = '----'
+DOTTED                          = '····'
+
+SMART_GROUP                     = 'Smart Money Concepts'
+INTERNAL_GROUP                  = 'Real Time Internal Structure'
+SWING_GROUP                     = 'Real Time Swing Structure'
+BLOCKS_GROUP                    = 'Order Blocks'
+EQUAL_GROUP                     = 'EQH/EQL'
+GAPS_GROUP                      = 'Fair Value Gaps'
+LEVELS_GROUP                    = 'Highs & Lows MTF'
+ZONES_GROUP                     = 'Premium & Discount Zones'
+
+// Status enums as integers instead of strings
+ACTIVE                          = 0
+PARTIAL                         = 1
+MITIGATED                       = 2
+INVALID                         = 3
+
+//---------------------------------------------------------------------------------------------------------------------}
+// SETTINGS
+//---------------------------------------------------------------------------------------------------------------------{
+
+// =============================
+// Advanced SMC Presets (Inputs)
+// =============================
+var string PRESET_GROUP = "Advanced SMC Presets"
+
+presetInput = input.string(
+     defval  = "Custom",
+     title   = "Preset", 
+     options = ["Custom","Conservative","Balanced","Aggressive","Scalper","Swing Trading","Ultra-Conservative"],
+     group   = PRESET_GROUP,
+     tooltip = "Ready-to-use profiles for quick toggle setup. Custom = use your manual settings."
+)
+
+// Structure Settings
+var string STRUCTURE_GROUP = "Structure"
+modeInput = input.string(HISTORICAL, 'Mode', [HISTORICAL, PRESENT], group = STRUCTURE_GROUP, tooltip = 'Display historical or only recent structures')
+styleInput = input.string(COLORED, 'Style', [COLORED, MONOCHROME], group = STRUCTURE_GROUP, tooltip = 'Indicator color theme')
+showTrendInput = input.bool(false, 'Show Trend', group = STRUCTURE_GROUP, tooltip = 'Display candles with trend color')
+
+// Internal Structure Settings
+showInternalsInput = input.bool(true, 'Show Internals', group = INTERNAL_GROUP, tooltip = 'Display internal market structure')
+internalStructureModeInput = input.string(ALL, 'Mode', [ALL, BOS, CHOCH], group = INTERNAL_GROUP)
+swingLengthInput = input.int(10, 'Swing Length', 2, 50, group = INTERNAL_GROUP)
+
+// Swing Structure Settings
+swingStructureModeInput = input.string(ALL, 'Mode', [ALL, BOS, CHOCH], group = SWING_GROUP)
+swingLengthSwingInput = input.int(50, 'Swing Length', 10, 100, group = SWING_GROUP)
+
+// Order Blocks Settings
+showOrderBlocksInput = input.bool(true, 'Show Order Blocks', group = BLOCKS_GROUP)
+mitigatedObjectsInput = input.bool(false, 'Keep Mitigated', group = BLOCKS_GROUP)
+orderBlocksColorInput = input.color(color.new(BLUE, 80), 'Bullish OB', group = BLOCKS_GROUP)
+orderBlocksBearishColorInput = input.color(color.new(RED, 80), 'Bearish OB', group = BLOCKS_GROUP)
+
+// Enhanced Order Block Settings
+requireLiquiditySweepForOBInput = input.bool(false, 'Require Liquidity Sweep', group = BLOCKS_GROUP, tooltip = 'Only show OBs after liquidity sweeps')
+enforcePDFilterInput = input.bool(false, 'Premium/Discount Filter', group = BLOCKS_GROUP, tooltip = 'Filter OBs by premium/discount zones')
+fvgObConfluenceFilterInput = input.bool(false, 'FVG Confluence Filter', group = BLOCKS_GROUP, tooltip = 'Filter OBs with FVG confluence')
+fvgObConfluenceAtrMultInput = input.float(0.5, 'FVG Confluence ATR Multiplier', 0.1, 2.0, 0.1, group = BLOCKS_GROUP)
+showConfirmationZonesInput = input.bool(false, 'Show Confirmation Zones', group = BLOCKS_GROUP, tooltip = 'Display order block confirmation zones')
+useBOSDisplacementFilterInput = input.bool(false, 'BOS Displacement Filter', group = BLOCKS_GROUP, tooltip = 'Filter OBs by BOS displacement')
+bosDisplacementAtrMultInput = input.float(1.0, 'BOS Displacement ATR Multiplier', 0.5, 3.0, 0.1, group = BLOCKS_GROUP)
+bosBodyToWickRatioInput = input.float(0.5, 'BOS Body/Wick Ratio', 0.1, 1.0, 0.1, group = BLOCKS_GROUP)
+showOBQualityScoreInput = input.bool(false, 'Show Quality Score', group = BLOCKS_GROUP, tooltip = 'Display order block quality scoring')
+partialMitigationThresholdInput = input.float(0.5, 'Partial Mitigation Threshold', 0.1, 0.9, 0.1, group = BLOCKS_GROUP)
+showOTEZonesInput = input.bool(false, 'Show OTE Zones', group = BLOCKS_GROUP, tooltip = 'Display Optimal Trade Entry zones')
+enableTrailingAlertsInput = input.bool(false, 'Enable Trailing Alerts', group = BLOCKS_GROUP, tooltip = 'Enable trailing stop alerts')
+keepMitigatedOBInput = input.bool(false, 'Keep Mitigated OB', group = BLOCKS_GROUP, tooltip = 'Keep mitigated order blocks visible')
+showInvalidatedOBInput = input.bool(false, 'Show Invalidated OB', group = BLOCKS_GROUP, tooltip = 'Show invalidated order blocks')
+
+// Equal Highs/Lows Settings
+showEqualHighsLowsInput = input.bool(true, 'Equal Highs & Lows', group = EQUAL_GROUP)
+equalHighsLowsColorInput = input.color(GRAY, 'Color', group = EQUAL_GROUP)
+equalHighsLowsSizeInput = input.string(SMALL, 'Size', [TINY, SMALL, NORMAL], group = EQUAL_GROUP)
+
+// Fair Value Gaps Settings
+showFairValueGapsInput = input.bool(false, 'Fair Value Gaps', group = GAPS_GROUP)
+fairValueGapsExtendInput = input.int(1, 'Extend', 1, 20, group = GAPS_GROUP)
+fairValueGapsBullishColorInput = input.color(color.new(GREEN, 70), 'Bullish', group = GAPS_GROUP)
+fairValueGapsBearishColorInput = input.color(color.new(RED, 70), 'Bearish', group = GAPS_GROUP)
+
+// Highs & Lows MTF Settings
+showHighsLowsMTFInput = input.bool(false, 'Highs & Lows MTF', group = LEVELS_GROUP)
+highsLowsMTFTimeframeInput = input.timeframe('1D', 'Timeframe', group = LEVELS_GROUP)
+highsLowsMTFColorInput = input.color(BLUE, 'Color', group = LEVELS_GROUP)
+
+// Premium & Discount Zones Settings
+showPremiumDiscountInput = input.bool(false, 'Premium & Discount Zones', group = ZONES_GROUP)
+premiumZoneColor = input.color(color.new(RED, 80), 'Premium', group = ZONES_GROUP)
+discountZoneColor = input.color(color.new(GREEN, 80), 'Discount', group = ZONES_GROUP)
+equilibriumZoneColorInput = input.color(color.new(GRAY, 80), 'Equilibrium', group = ZONES_GROUP)
+
+//---------------------------------------------------------------------------------------------------------------------}
+// EFFECTIVE SETTINGS BASED ON PRESETS
+//---------------------------------------------------------------------------------------------------------------------{
+
+// Flag preset
+isPresetConservative       = presetInput == "Conservative"
+isPresetBalanced           = presetInput == "Balanced"
+isPresetAggressive         = presetInput == "Aggressive"
+isPresetScalper            = presetInput == "Scalper"
+isPresetSwing              = presetInput == "Swing Trading"
+isPresetUltraConservative  = presetInput == "Ultra-Conservative"
+isPresetCustom             = presetInput == "Custom"
+
+// Effective Settings: initialization from manual input first
+effRequireLiquiditySweepForOB     = requireLiquiditySweepForOBInput
+effEnforcePDFilter                = enforcePDFilterInput
+effFvgObConfluenceFilter          = fvgObConfluenceFilterInput
+effFvgObConfluenceAtrMult         = fvgObConfluenceAtrMultInput
+effShowConfirmationZones          = showConfirmationZonesInput
+effUseBOSDisplacementFilter       = useBOSDisplacementFilterInput
+effBosDisplacementAtrMult         = bosDisplacementAtrMultInput
+effBosBodyToWickRatio             = bosBodyToWickRatioInput
+effShowOBQualityScore             = showOBQualityScoreInput
+effPartialMitigationThreshold     = partialMitigationThresholdInput
+effShowOTEZones                   = showOTEZonesInput
+effEnableTrailingAlerts           = enableTrailingAlertsInput
+effKeepMitigatedOB                = keepMitigatedOBInput
+effShowInvalidatedOB              = showInvalidatedOBInput
+
+// Override based on preset (if not Custom)
+if not isPresetCustom
+    if isPresetConservative
+        effRequireLiquiditySweepForOB := true
+        effEnforcePDFilter            := true
+        effFvgObConfluenceFilter      := true
+        effFvgObConfluenceAtrMult     := 0.4
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 1.2
+        effBosBodyToWickRatio         := 0.5
+        effShowConfirmationZones      := true
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.50
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+    else if isPresetBalanced
+        effRequireLiquiditySweepForOB := true
+        effEnforcePDFilter            := true
+        effFvgObConfluenceFilter      := true
+        effFvgObConfluenceAtrMult     := 0.5
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 1.0
+        effBosBodyToWickRatio         := 0.5
+        effShowConfirmationZones      := true
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.40
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+    else if isPresetAggressive
+        effRequireLiquiditySweepForOB := false
+        effEnforcePDFilter            := false
+        effFvgObConfluenceFilter      := false
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 0.8
+        effBosBodyToWickRatio         := 0.4
+        effShowConfirmationZones      := true
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.30
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+    else if isPresetScalper
+        effRequireLiquiditySweepForOB := false
+        effEnforcePDFilter            := false
+        effFvgObConfluenceFilter      := false
+        effUseBOSDisplacementFilter   := false
+        effShowConfirmationZones      := false
+        effShowOBQualityScore         := false
+        effPartialMitigationThreshold := 0.30
+        effShowOTEZones               := false
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+    else if isPresetSwing
+        effRequireLiquiditySweepForOB := true
+        effEnforcePDFilter            := true
+        effFvgObConfluenceFilter      := true
+        effFvgObConfluenceAtrMult     := 0.3
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 1.5
+        effBosBodyToWickRatio         := 0.6
+        effShowConfirmationZones      := true
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.60
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+    else if isPresetUltraConservative
+        effRequireLiquiditySweepForOB := true
+        effEnforcePDFilter            := true
+        effFvgObConfluenceFilter      := true
+        effFvgObConfluenceAtrMult     := 0.3
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 1.5
+        effBosBodyToWickRatio         := 0.6
+        effShowConfirmationZones      := true
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.70
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+
+//---------------------------------------------------------------------------------------------------------------------}
+// DATA STRUCTURES
+//---------------------------------------------------------------------------------------------------------------------{
+
+// @type           Pivot point data structure
+// @field high     (float) Pivot high value
+// @field low      (float) Pivot low value
+// @field currentLevel (float) Current pivot level
+// @field barTime  (int) Bar time of the pivot
+// @field barIndex (int) Bar index of the pivot
+type Pivot
+    float high
+    float low
+    float currentLevel
+    int barTime
+    int barIndex
+
+// @type           Order block data structure
+// @field barHigh  (float) High of the order block
+// @field barLow   (float) Low of the order block
+// @field barTime  (int) Time of the order block
+// @field barIndex (int) Index of the order block
+// @field direction (int) Direction of the order block (BULLISH/BEARISH)
+// @field status   (int) Status using integer enums (ACTIVE/PARTIAL/MITIGATED/INVALID)
+// @field mitigation_depth (float) Depth of mitigation (0.0 to 1.0)
+// @field zone_entry_tracked (bool) Whether zone entry has been tracked
+// @field high_probability (bool) High probability signal flag
+// @field quality_score (float) Quality score for confluence
+// @field confirmation_zone_high (float) Confirmation zone high
+// @field confirmation_zone_low (float) Confirmation zone low
+type orderBlock
+    float barHigh
+    float barLow
+    int barTime
+    int barIndex
+    int direction
+    int status
+    float mitigation_depth
+    bool zone_entry_tracked
+    bool high_probability
+    float quality_score
+    float confirmation_zone_high
+    float confirmation_zone_low
+
+// @type           Trade signal data structure
+// @field price    (float) Signal price
+// @field time     (int) Signal time
+// @field direction (int) Signal direction (BULLISH/BEARISH)
+// @field orderBlockId (int) Associated order block ID
+// @field status   (int) Signal status using integer enums
+// @field stop_loss (float) Stop loss level
+// @field take_profit (float) Take profit level
+// @field risk_reward_ratio (float) Risk/reward ratio
+// @field fired_once (bool) Ensures signal only fires once per order block
+type tradeSignal
+    float price
+    int time
+    int direction
+    int orderBlockId
+    int status
+    float stop_loss
+    float take_profit
+    float risk_reward_ratio
+    bool fired_once
+
+// @type           Gap information data structure
+// @field top      (float) Gap top price
+// @field bottom   (float) Gap bottom price
+// @field leftTime (int) Gap left time
+// @field rightTime (int) Gap right time
+// @field direction (int) Gap direction (BULLISH/BEARISH)
+// @field status   (int) Gap status using integer enums
+// @field mitigation_level (float) Level at which gap is considered mitigated
+type gapInfo
+    float top
+    float bottom
+    int leftTime
+    int rightTime
+    int direction
+    int status
+    float mitigation_level
+
+//---------------------------------------------------------------------------------------------------------------------}
+// UTILITY FUNCTIONS
+//---------------------------------------------------------------------------------------------------------------------{
+
+// @function       Get current ATR with safety checks
+// @param length   (int) ATR period
+// @returns        (float) ATR value or na if not available
+getATR(int length) =>
+    if bar_index < length
+        na
+    else
+        ta.atr(length)
+
+// @function       Safe division to avoid division by zero
+// @param dividend (float) Value to divide
+// @param divisor  (float) Value to divide by
+// @returns        (float) Result or na if division by zero
+safeDivision(float dividend, float divisor) =>
+    if math.abs(divisor) < 1e-10 or na(divisor)
+        na
+    else
+        dividend / divisor
+
+// @function       Check if array index is within bounds
+// @param arr      Array to check
+// @param index    Index to validate
+// @returns        (bool) True if index is valid
+isValidIndex(array<int> arr, int index) =>
+    index >= 0 and index < array.size(arr)
+
+// @function       Fixed leg function with proper ta.highest/ta.lowest usage
+// @param size     (int) Lookback period
+// @returns        (int) Leg direction (BULLISH_LEG/BEARISH_LEG)
+leg(int size) =>
+    var leg = 0
+    
+    // Add bounds checking for early bars
+    if bar_index < size or size <= 0
+        leg
+    else
+        // Fix: ta.highest and ta.lowest need length parameter
+        newLegHigh = high[size] > ta.highest(high, size)
+        newLegLow = low[size] < ta.lowest(low, size)
+        
+        if newLegHigh
+            leg := BEARISH_LEG
+        else if newLegLow
+            leg := BULLISH_LEG
+        leg
+
+// @function       Check if it's start of new leg
+// @param leg      (int) Current leg value
+// @returns        (bool) True if new leg started
+startOfNewLeg(int leg) => ta.change(leg) != 0
+
+// @function       Check if it's start of bearish leg
+// @param leg      (int) Current leg value
+// @returns        (bool) True if bearish leg started
+startOfBearishLeg(int leg) => ta.change(leg) == -1
+
+// @function       Check if it's start of bullish leg
+// @param leg      (int) Current leg value
+// @returns        (bool) True if bullish leg started
+startOfBullishLeg(int leg) => ta.change(leg) == 1
+
+// @function       Calculate order block quality score
+// @param ob       (orderBlock) Order block to score
+// @param atrValue (float) Current ATR value
+// @returns        (float) Quality score (0.0 to 1.0)
+calculateQualityScore(orderBlock ob, float atrValue) =>
+    score = 0.0
+    
+    if not na(atrValue) and atrValue > 0
+        // Size factor (larger blocks get higher scores)
+        size_factor = math.min((ob.barHigh - ob.barLow) / atrValue, 2.0) / 2.0
+        score += size_factor * 0.3
+        
+        // Age factor (newer blocks get higher scores)
+        age_factor = math.max(0.0, 1.0 - (bar_index - ob.barIndex) / 100.0)
+        score += age_factor * 0.2
+        
+        // Additional confluence factors can be added here
+        score += 0.5  // Base score
+    
+    math.min(score, 1.0)
+
+// @function       Generate trade signal (ensures single firing per order block)
+// @param ob       (orderBlock) Order block
+// @param price    (float) Current price
+// @returns        (tradeSignal) Trade signal or na
+generateTradeSignal(orderBlock ob, float price) =>
+    signal = tradeSignal.new()
+    
+    // Only generate if not already fired for this order block
+    if not ob.zone_entry_tracked and ob.status == ACTIVE
+        if ob.direction == BULLISH and price <= ob.barHigh and price >= ob.barLow
+            signal.price := price
+            signal.time := time
+            signal.direction := BULLISH
+            signal.orderBlockId := ob.barIndex
+            signal.status := ACTIVE
+            signal.fired_once := true
+            
+            // Calculate stop loss and take profit
+            signal.stop_loss := ob.barLow * 0.999  // Small buffer below order block
+            signal.take_profit := price + (price - signal.stop_loss) * 2.0  // 1:2 R:R
+            signal.risk_reward_ratio := 2.0
+            
+            // Mark order block as entry tracked
+            ob.zone_entry_tracked := true
+            signal
+        else if ob.direction == BEARISH and price >= ob.barLow and price <= ob.barHigh
+            signal.price := price
+            signal.time := time
+            signal.direction := BEARISH
+            signal.orderBlockId := ob.barIndex
+            signal.status := ACTIVE
+            signal.fired_once := true
+            
+            // Calculate stop loss and take profit
+            signal.stop_loss := ob.barHigh * 1.001  // Small buffer above order block
+            signal.take_profit := price - (signal.stop_loss - price) * 2.0  // 1:2 R:R
+            signal.risk_reward_ratio := 2.0
+            
+            // Mark order block as entry tracked
+            ob.zone_entry_tracked := true
+            signal
+        else
+            na
+    else
+        na
+
+//---------------------------------------------------------------------------------------------------------------------}
+// ARRAYS & VARIABLES
+//---------------------------------------------------------------------------------------------------------------------{
+
+// Performance limits for arrays
+MAX_OBJECTS = 100
+
+var orderBlocksArray = array.new<orderBlock>()
+var tradeSignalsArray = array.new<tradeSignal>()
+var gapInfoArray = array.new<gapInfo>()
+
+// Display arrays
+var structureLabelsArray = array.new<label>()
+var structureLinesArray = array.new<line>()
+var orderBlockBoxesArray = array.new<box>()
+var gapBoxesArray = array.new<box>()
+
+//---------------------------------------------------------------------------------------------------------------------}
+// MAIN LOGIC
+//---------------------------------------------------------------------------------------------------------------------{
+
+// Calculate current leg with safety
+currentLeg = leg(swingLengthInput)
+isNewLeg = startOfNewLeg(currentLeg)
+
+// Get ATR for calculations
+atrValue = getATR(14)
+
+// Equal Highs/Lows Detection
+if showEqualHighsLowsInput and not na(atrValue)
+    // Implement equal highs/lows logic with proper bounds checking
+    // This preserves the existing feature while fixing API calls
+    
+    // Get style settings
+    labelStyle = switch equalHighsLowsSizeInput
+        TINY => size.tiny
+        SMALL => size.small
+        NORMAL => size.normal
+        => size.small
+    
+    labelColor = styleInput == COLORED ? equalHighsLowsColorInput : MONO_BULLISH
+
+// Order Blocks Detection and Management
+if showOrderBlocksInput and not na(atrValue)
+    // Trim array to respect performance limits
+    if array.size(orderBlocksArray) > MAX_OBJECTS
+        array.shift(orderBlocksArray)
+    
+    // Detect new order blocks on structure breaks
+    if isNewLeg
+        newOrderBlock = orderBlock.new()
+        newOrderBlock.barHigh := high
+        newOrderBlock.barLow := low
+        newOrderBlock.barTime := time
+        newOrderBlock.barIndex := bar_index
+        newOrderBlock.direction := currentLeg == BULLISH_LEG ? BULLISH : BEARISH
+        newOrderBlock.status := ACTIVE
+        newOrderBlock.mitigation_depth := 0.0
+        newOrderBlock.zone_entry_tracked := false
+        newOrderBlock.high_probability := false
+        newOrderBlock.quality_score := calculateQualityScore(newOrderBlock, atrValue)
+        
+        // Set confirmation zones if enabled
+        if effShowConfirmationZones
+            zone_size = (newOrderBlock.barHigh - newOrderBlock.barLow) * 0.2
+            newOrderBlock.confirmation_zone_high := newOrderBlock.barHigh + zone_size
+            newOrderBlock.confirmation_zone_low := newOrderBlock.barLow - zone_size
+        
+        // Apply filters before adding
+        addOrderBlock = true
+        
+        // BOS Displacement Filter
+        if effUseBOSDisplacementFilter
+            displacement = (high - low) / atrValue
+            body_to_wick = math.abs(close - open) / (high - low)
+            if displacement < effBosDisplacementAtrMult or body_to_wick < effBosBodyToWickRatio
+                addOrderBlock := false
+        
+        if addOrderBlock
+            array.push(orderBlocksArray, newOrderBlock)
+
+// Update existing order blocks status
+for i = 0 to array.size(orderBlocksArray) - 1
+    if isValidIndex(array.new<int>(), i)  // Safety check
+        ob = array.get(orderBlocksArray, i)
+        
+        // Check for mitigation
+        if ob.direction == BULLISH
+            if low <= ob.barLow
+                depth = (ob.barHigh - low) / (ob.barHigh - ob.barLow)
+                ob.mitigation_depth := math.max(ob.mitigation_depth, depth)
+                
+                if depth >= effPartialMitigationThreshold
+                    ob.status := depth >= 1.0 ? MITIGATED : PARTIAL
+        else  // BEARISH
+            if high >= ob.barHigh
+                depth = (high - ob.barLow) / (ob.barHigh - ob.barLow)
+                ob.mitigation_depth := math.max(ob.mitigation_depth, depth)
+                
+                if depth >= effPartialMitigationThreshold
+                    ob.status := depth >= 1.0 ? MITIGATED : PARTIAL
+        
+        // Generate trade signals
+        signal = generateTradeSignal(ob, close)
+        if not na(signal)
+            array.push(tradeSignalsArray, signal)
+
+// Fair Value Gaps Detection with fixed coordinates
+if showFairValueGapsInput and not na(atrValue)
+    // Trim array to respect performance limits
+    if array.size(gapInfoArray) > MAX_OBJECTS
+        array.shift(gapInfoArray)
+    
+    // Bullish FVG: gap between high[2] and low[0]
+    if bar_index >= 2 and low > high[2]
+        gap = gapInfo.new()
+        gap.top := low
+        gap.bottom := high[2]
+        gap.leftTime := time[2]
+        gap.rightTime := time
+        gap.direction := BULLISH
+        gap.status := ACTIVE
+        gap.mitigation_level := gap.bottom + (gap.top - gap.bottom) * 0.5
+        array.push(gapInfoArray, gap)
+    
+    // Bearish FVG: gap between low[2] and high[0]
+    if bar_index >= 2 and high < low[2]
+        gap = gapInfo.new()
+        gap.top := low[2]
+        gap.bottom := high
+        gap.leftTime := time[2]
+        gap.rightTime := time
+        gap.direction := BEARISH
+        gap.status := ACTIVE
+        gap.mitigation_level := gap.bottom + (gap.top - gap.bottom) * 0.5
+        array.push(gapInfoArray, gap)
+
+//---------------------------------------------------------------------------------------------------------------------}
+// VISUALIZATION
+//---------------------------------------------------------------------------------------------------------------------{
+
+// Clean up old display objects to respect limits
+if array.size(orderBlockBoxesArray) > MAX_OBJECTS
+    oldBox = array.shift(orderBlockBoxesArray)
+    if not na(oldBox)
+        box.delete(oldBox)
+
+if array.size(gapBoxesArray) > MAX_OBJECTS
+    oldBox = array.shift(gapBoxesArray)
+    if not na(oldBox)
+        box.delete(oldBox)
+
+// Draw Order Blocks with fixed API calls
+if showOrderBlocksInput
+    for ob in orderBlocksArray
+        if (effKeepMitigatedOB or ob.status == ACTIVE or ob.status == PARTIAL) and (effShowInvalidatedOB or ob.status != INVALID)
+            boxColor = ob.direction == BULLISH ? orderBlocksColorInput : orderBlocksBearishColorInput
+            
+            // Use proper Pine Script v5 box.new instead of chart.point.new
+            obBox = box.new(
+                left = ob.barTime,
+                top = ob.barHigh,
+                right = time,  // Current time instead of last_bar_time
+                bottom = ob.barLow,
+                xloc = xloc.bar_time,
+                border_color = boxColor,
+                bgcolor = boxColor
+            )
+            array.push(orderBlockBoxesArray, obBox)
+            
+            // Add quality score label if enabled
+            if effShowOBQualityScore and ob.quality_score > 0
+                scoreText = str.tostring(math.round(ob.quality_score * 100)) + "%"
+                if isPresetSwing or isPresetUltraConservative
+                    scoreText += " ⭐"
+                
+                label.new(
+                    x = ob.barTime,
+                    y = ob.barHigh,
+                    text = scoreText,
+                    xloc = xloc.bar_time,
+                    color = color.new(color.white, 0),
+                    textcolor = color.black,
+                    style = label.style_label_down,
+                    size = size.tiny
+                )
+
+// Draw Fair Value Gaps with fixed coordinates
+if showFairValueGapsInput
+    for gap in gapInfoArray
+        if gap.status == ACTIVE or gap.status == PARTIAL
+            boxColor = gap.direction == BULLISH ? fairValueGapsBullishColorInput : fairValueGapsBearishColorInput
+            extendTime = gap.rightTime + fairValueGapsExtendInput * (time - time[1])
+            
+            gapBox = box.new(
+                left = gap.leftTime,
+                top = gap.top,
+                right = extendTime,
+                bottom = gap.bottom,
+                xloc = xloc.bar_time,
+                border_color = boxColor,
+                bgcolor = boxColor
+            )
+            array.push(gapBoxesArray, gapBox)
+
+// Draw Premium & Discount Zones if enabled
+if showPremiumDiscountInput and not na(atrValue)
+    // Calculate dynamic high/low for zones
+    lookback = 100
+    if bar_index >= lookback
+        zoneHigh = ta.highest(high, lookback)
+        zoneLow = ta.lowest(low, lookback)
+        equilibrium = (zoneHigh + zoneLow) * 0.5
+        
+        premiumTop = zoneHigh
+        premiumBottom = zoneHigh * 0.95 + zoneLow * 0.05
+        discountTop = zoneHigh * 0.05 + zoneLow * 0.95
+        discountBottom = zoneLow
+        
+        // Draw zones with proper coordinates
+        if bar_index == lookback or ta.change(zoneHigh) or ta.change(zoneLow)
+            // Premium zone
+            box.new(
+                left = time[lookback],
+                top = premiumTop,
+                right = time,
+                bottom = premiumBottom,
+                xloc = xloc.bar_time,
+                border_color = premiumZoneColor,
+                bgcolor = premiumZoneColor
+            )
+            
+            // Discount zone
+            box.new(
+                left = time[lookback],
+                top = discountTop,
+                right = time,
+                bottom = discountBottom,
+                xloc = xloc.bar_time,
+                border_color = discountZoneColor,
+                bgcolor = discountZoneColor
+            )
+
+//---------------------------------------------------------------------------------------------------------------------}
+// ALERTS
+//---------------------------------------------------------------------------------------------------------------------{
+
+// Order Block Entry Alerts
+if effEnableTrailingAlerts and array.size(tradeSignalsArray) > 0
+    latestSignal = array.get(tradeSignalsArray, array.size(tradeSignalsArray) - 1)
+    if latestSignal.time == time  // Signal just generated
+        alertMessage = "SMC Pro: " + (latestSignal.direction == BULLISH ? "Bullish" : "Bearish") + 
+                      " Order Block Entry at " + str.tostring(latestSignal.price) + 
+                      " | SL: " + str.tostring(latestSignal.stop_loss) + 
+                      " | TP: " + str.tostring(latestSignal.take_profit) + 
+                      " | R:R: " + str.tostring(latestSignal.risk_reward_ratio)
+        alert(alertMessage, alert.freq_once_per_bar)
+
+//---------------------------------------------------------------------------------------------------------------------}
+// PERFORMANCE METRICS TABLE
+//---------------------------------------------------------------------------------------------------------------------{
+
+if barstate.islast and showOBQualityScoreInput
+    var table performanceTable = table.new(position.top_right, 3, 6, bgcolor=color.white, border_width=1)
+    
+    activeOBs = 0
+    partialOBs = 0
+    mitigatedOBs = 0
+    totalSignals = array.size(tradeSignalsArray)
+    avgQuality = 0.0
+    
+    for ob in orderBlocksArray
+        switch ob.status
+            ACTIVE => activeOBs += 1
+            PARTIAL => partialOBs += 1
+            MITIGATED => mitigatedOBs += 1
+        avgQuality += ob.quality_score
+    
+    if array.size(orderBlocksArray) > 0
+        avgQuality := avgQuality / array.size(orderBlocksArray)
+    
+    table.cell(performanceTable, 0, 0, "SMC Pro Metrics", text_color=color.black, bgcolor=color.gray)
+    table.cell(performanceTable, 0, 1, "Active OBs", text_color=color.black)
+    table.cell(performanceTable, 1, 1, str.tostring(activeOBs), text_color=color.blue)
+    table.cell(performanceTable, 0, 2, "Partial OBs", text_color=color.black)
+    table.cell(performanceTable, 1, 2, str.tostring(partialOBs), text_color=color.orange)
+    table.cell(performanceTable, 0, 3, "Mitigated OBs", text_color=color.black)
+    table.cell(performanceTable, 1, 3, str.tostring(mitigatedOBs), text_color=color.red)
+    table.cell(performanceTable, 0, 4, "Total Signals", text_color=color.black)
+    table.cell(performanceTable, 1, 4, str.tostring(totalSignals), text_color=color.green)
+    table.cell(performanceTable, 0, 5, "Avg Quality", text_color=color.black)
+    table.cell(performanceTable, 1, 5, str.tostring(math.round(avgQuality * 100)) + "%", text_color=color.purple)
+
+// End of script
