@@ -2,7 +2,7 @@
 // © LuxAlgo
 
 //@version=5
-indicator('SMC Advanced', 'Smart Money OK', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)
+indicator('SMC Advanced', 'SMC v2.0', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)
 //---------------------------------------------------------------------------------------------------------------------}
 //CONSTANTS & STRINGS & INPUTS
 //---------------------------------------------------------------------------------------------------------------------{
@@ -132,6 +132,195 @@ showPremiumDiscountZonesInput   = input(        false,      'Premium/Discount Zo
 premiumZoneColorInput           = input.color(  RED,        'Premium Zone',             group = ZONES_GROUP)
 equilibriumZoneColorInput       = input.color(  GRAY,       'Equilibrium Zone',         group = ZONES_GROUP)
 discountZoneColorInput          = input.color(  GREEN,      'Discount Zone',            group = ZONES_GROUP)
+
+// Placeholder inputs for Advanced SMC Presets (to ensure compilation)
+requireLiquiditySweepForOBInput    = input(        false,      'Require Liquidity Sweep for OB',    group = ZONES_GROUP, tooltip = 'Placeholder for preset functionality')
+enforcePDFilterInput               = input(        false,      'Enforce PD Filter',                  group = ZONES_GROUP, tooltip = 'Placeholder for preset functionality')
+fvgObConfluenceFilterInput         = input(        false,      'FVG OB Confluence Filter',           group = ZONES_GROUP, tooltip = 'Placeholder for preset functionality')
+fvgObConfluenceAtrMultInput        = input.float(  0.5,        'FVG OB Confluence ATR Mult',         group = ZONES_GROUP, tooltip = 'Placeholder for preset functionality', minval = 0.1, maxval = 2.0, step = 0.1)
+showConfirmationZonesInput         = input(        false,      'Show Confirmation Zones',            group = ZONES_GROUP, tooltip = 'Placeholder for preset functionality')
+useBOSDisplacementFilterInput      = input(        false,      'Use BOS Displacement Filter',        group = ZONES_GROUP, tooltip = 'Placeholder for preset functionality')
+bosDisplacementAtrMultInput        = input.float(  1.0,        'BOS Displacement ATR Mult',          group = ZONES_GROUP, tooltip = 'Placeholder for preset functionality', minval = 0.5, maxval = 3.0, step = 0.1)
+bosBodyToWickRatioInput            = input.float(  0.5,        'BOS Body to Wick Ratio',             group = ZONES_GROUP, tooltip = 'Placeholder for preset functionality', minval = 0.1, maxval = 1.0, step = 0.1)
+showOBQualityScoreInput            = input(        false,      'Show OB Quality Score',              group = ZONES_GROUP, tooltip = 'Placeholder for preset functionality')
+partialMitigationThresholdInput    = input.float(  0.5,        'Partial Mitigation Threshold',       group = ZONES_GROUP, tooltip = 'Placeholder for preset functionality', minval = 0.1, maxval = 1.0, step = 0.1)
+showOTEZonesInput                  = input(        false,      'Show OTE Zones',                     group = ZONES_GROUP, tooltip = 'Placeholder for preset functionality')
+enableTrailingAlertsInput          = input(        true,       'Enable Trailing Alerts',             group = ZONES_GROUP, tooltip = 'Enable/disable all alert conditions')
+keepMitigatedOBInput               = input(        false,      'Keep Mitigated OB',                  group = ZONES_GROUP, tooltip = 'Placeholder for preset functionality')
+showInvalidatedOBInput             = input(        false,      'Show Invalidated OB',                group = ZONES_GROUP, tooltip = 'Placeholder for preset functionality')
+
+//---------------------------------------------------------------------------------------------------------------------}
+//ADVANCED SMC PRESETS
+//---------------------------------------------------------------------------------------------------------------------{
+
+// =============================
+// Advanced SMC Presets (Inputs)
+// =============================
+var string PRESET_GROUP = "Advanced SMC Presets"
+
+// Tambahkan opsi "Swing Trading" & "Ultra-Conservative"
+presetInput = input.string(title="Preset", defval="Custom", options=["Custom","Conservative","Balanced","Aggressive","Scalper","Swing Trading","Ultra-Conservative"], group=PRESET_GROUP, tooltip="Profil siap pakai untuk mempercepat on/off toggle. Custom = gunakan pengaturan manual Anda.")
+
+// Flag preset
+isPresetConservative       = presetInput == "Conservative"
+isPresetBalanced           = presetInput == "Balanced"
+isPresetAggressive         = presetInput == "Aggressive"
+isPresetScalper            = presetInput == "Scalper"
+isPresetSwing              = presetInput == "Swing Trading"
+isPresetUltraConservative  = presetInput == "Ultra-Conservative"
+isPresetCustom             = presetInput == "Custom"
+
+// =======================================================
+// Effective Settings: inisialisasi dari input manual dulu
+// =======================================================
+// Catatan: pastikan nama variabel input manual sesuai script Anda.
+// Contoh di bawah mengikuti nama yang disepakati dalam PR.
+effRequireLiquiditySweepForOB     = requireLiquiditySweepForOBInput
+effEnforcePDFilter                = enforcePDFilterInput
+effFvgObConfluenceFilter          = fvgObConfluenceFilterInput
+effFvgObConfluenceAtrMult         = fvgObConfluenceAtrMultInput
+effShowConfirmationZones          = showConfirmationZonesInput
+effUseBOSDisplacementFilter       = useBOSDisplacementFilterInput
+effBosDisplacementAtrMult         = bosDisplacementAtrMultInput
+effBosBodyToWickRatio             = bosBodyToWickRatioInput
+effShowOBQualityScore             = showOBQualityScoreInput
+effPartialMitigationThreshold     = partialMitigationThresholdInput
+effShowOTEZones                   = showOTEZonesInput
+effEnableTrailingAlerts           = enableTrailingAlertsInput
+effKeepMitigatedOB                = keepMitigatedOBInput
+effShowInvalidatedOB              = showInvalidatedOBInput
+
+// =======================================================
+// Override berdasarkan preset (jika bukan Custom)
+// =======================================================
+if not isPresetCustom
+    // Default "baseline" untuk non-Custom (opsional; bisa dilewati)
+    effRequireLiquiditySweepForOB := effRequireLiquiditySweepForOB
+    effEnforcePDFilter            := effEnforcePDFilter
+    effFvgObConfluenceFilter      := effFvgObConfluenceFilter
+    effFvgObConfluenceAtrMult     := effFvgObConfluenceAtrMult
+    effShowConfirmationZones      := effShowConfirmationZones
+    effUseBOSDisplacementFilter   := effUseBOSDisplacementFilter
+    effBosDisplacementAtrMult     := effBosDisplacementAtrMult
+    effBosBodyToWickRatio         := effBosBodyToWickRatio
+    effShowOBQualityScore         := effShowOBQualityScore
+    effPartialMitigationThreshold := effPartialMitigationThreshold
+    effShowOTEZones               := effShowOTEZones
+    effEnableTrailingAlerts       := effEnableTrailingAlerts
+    effKeepMitigatedOB            := effKeepMitigatedOB
+    effShowInvalidatedOB          := effShowInvalidatedOB
+
+    // Conservative
+    if isPresetConservative
+        effRequireLiquiditySweepForOB := true
+        effEnforcePDFilter            := true
+        effFvgObConfluenceFilter      := true
+        effFvgObConfluenceAtrMult     := 0.4
+        effShowConfirmationZones      := true
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 1.2
+        effBosBodyToWickRatio         := 0.5
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.5
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+
+    // Balanced
+    if isPresetBalanced
+        effRequireLiquiditySweepForOB := true
+        effEnforcePDFilter            := true
+        effFvgObConfluenceFilter      := true
+        effFvgObConfluenceAtrMult     := 0.5
+        effShowConfirmationZones      := true
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 1.0
+        effBosBodyToWickRatio         := 0.5
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.4
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+
+    // Aggressive
+    if isPresetAggressive
+        effRequireLiquiditySweepForOB := false
+        effEnforcePDFilter            := false
+        effFvgObConfluenceFilter      := false
+        effFvgObConfluenceAtrMult     := 0.7
+        effShowConfirmationZones      := true
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 0.8
+        effBosBodyToWickRatio         := 0.4
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.3
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+
+    // Scalper
+    if isPresetScalper
+        effRequireLiquiditySweepForOB := false
+        effEnforcePDFilter            := false
+        effFvgObConfluenceFilter      := false
+        effShowConfirmationZones      := false
+        effUseBOSDisplacementFilter   := false
+        effShowOBQualityScore         := false
+        effPartialMitigationThreshold := 0.3
+        effShowOTEZones               := false
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+
+    // Swing Trading (baru)
+    if isPresetSwing
+        effRequireLiquiditySweepForOB := true
+        effEnforcePDFilter            := true
+        effFvgObConfluenceFilter      := true
+        effFvgObConfluenceAtrMult     := 0.5
+        effShowConfirmationZones      := true
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 1.1
+        effBosBodyToWickRatio         := 0.5
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.5
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+
+    // Ultra-Conservative (baru)
+    if isPresetUltraConservative
+        effRequireLiquiditySweepForOB := true
+        effEnforcePDFilter            := true
+        effFvgObConfluenceFilter      := true
+        effFvgObConfluenceAtrMult     := 0.35   // Lebih ketat
+        effShowConfirmationZones      := true
+        effUseBOSDisplacementFilter   := true
+        effBosDisplacementAtrMult     := 1.5    // Impulse tinggi
+        effBosBodyToWickRatio         := 0.6
+        effShowOBQualityScore         := true
+        effPartialMitigationThreshold := 0.6
+        effShowOTEZones               := true
+        effEnableTrailingAlerts       := true
+        effKeepMitigatedOB            := false
+        effShowInvalidatedOB          := false
+
+// =======================================================
+// QS Label Emoji (opsional, non-breaking)
+// =======================================================
+// Tambahkan prefix emoji pada Quality Score untuk baca cepat di preset tertentu
+qsEmojiPrefix = (isPresetSwing or isPresetUltraConservative) ? "⭐ " : ""
+
+// Catatan integrasi:
+// - Di bagian drawOrderBlocks() (atau fungsi yang menggambar QS label), saat effShowOBQualityScore = true,
+//   gabungkan qsEmojiPrefix ke teks label QS Anda, contoh:
+//   labelTextQS = qsEmojiPrefix + "QS: " + str.tostring(qsScore)
+//   label.new(..., text = labelTextQS, ...)
+// Pastikan baris ini mengganti pembuatan teks QS sebelumnya agar tidak dobel.
 
 //---------------------------------------------------------------------------------------------------------------------}
 //DATA STRUCTURES & VARIABLES
@@ -824,25 +1013,25 @@ if barstate.islastconfirmedhistory or (barstate.isrealtime and newBar)
 //---------------------------------------------------------------------------------------------------------------------}
 //ALERTS
 //---------------------------------------------------------------------------------------------------------------------{
-alertcondition(currentAlerts.internalBullishBOS,        'Internal Bullish BOS',         'Internal Bullish BOS formed')
-alertcondition(currentAlerts.internalBullishCHoCH,      'Internal Bullish CHoCH',       'Internal Bullish CHoCH formed')
-alertcondition(currentAlerts.internalBearishBOS,        'Internal Bearish BOS',         'Internal Bearish BOS formed')
-alertcondition(currentAlerts.internalBearishCHoCH,      'Internal Bearish CHoCH',       'Internal Bearish CHoCH formed')
+alertcondition(effEnableTrailingAlerts and currentAlerts.internalBullishBOS,        'Internal Bullish BOS',         'Internal Bullish BOS formed')
+alertcondition(effEnableTrailingAlerts and currentAlerts.internalBullishCHoCH,      'Internal Bullish CHoCH',       'Internal Bullish CHoCH formed')
+alertcondition(effEnableTrailingAlerts and currentAlerts.internalBearishBOS,        'Internal Bearish BOS',         'Internal Bearish BOS formed')
+alertcondition(effEnableTrailingAlerts and currentAlerts.internalBearishCHoCH,      'Internal Bearish CHoCH',       'Internal Bearish CHoCH formed')
 
-alertcondition(currentAlerts.swingBullishBOS,           'Bullish BOS',                  'Internal Bullish BOS formed')
-alertcondition(currentAlerts.swingBullishCHoCH,         'Bullish CHoCH',                'Internal Bullish CHoCH formed')
-alertcondition(currentAlerts.swingBearishBOS,           'Bearish BOS',                  'Bearish BOS formed')
-alertcondition(currentAlerts.swingBearishCHoCH,         'Bearish CHoCH',                'Bearish CHoCH formed')
+alertcondition(effEnableTrailingAlerts and currentAlerts.swingBullishBOS,           'Bullish BOS',                  'Internal Bullish BOS formed')
+alertcondition(effEnableTrailingAlerts and currentAlerts.swingBullishCHoCH,         'Bullish CHoCH',                'Internal Bullish CHoCH formed')
+alertcondition(effEnableTrailingAlerts and currentAlerts.swingBearishBOS,           'Bearish BOS',                  'Bearish BOS formed')
+alertcondition(effEnableTrailingAlerts and currentAlerts.swingBearishCHoCH,         'Bearish CHoCH',                'Bearish CHoCH formed')
 
-alertcondition(currentAlerts.internalBullishOrderBlock, 'Bullish Internal OB Breakout', 'Price broke bullish internal OB')
-alertcondition(currentAlerts.internalBearishOrderBlock, 'Bearish Internal OB Breakout', 'Price broke bearish internal OB')
-alertcondition(currentAlerts.swingBullishOrderBlock,    'Bullish Swing OB Breakout',    'Price broke bullish swing OB')
-alertcondition(currentAlerts.swingBearishOrderBlock,    'Bearish Swing OB Breakout',    'Price broke bearish swing OB')
+alertcondition(effEnableTrailingAlerts and currentAlerts.internalBullishOrderBlock, 'Bullish Internal OB Breakout', 'Price broke bullish internal OB')
+alertcondition(effEnableTrailingAlerts and currentAlerts.internalBearishOrderBlock, 'Bearish Internal OB Breakout', 'Price broke bearish internal OB')
+alertcondition(effEnableTrailingAlerts and currentAlerts.swingBullishOrderBlock,    'Bullish Swing OB Breakout',    'Price broke bullish swing OB')
+alertcondition(effEnableTrailingAlerts and currentAlerts.swingBearishOrderBlock,    'Bearish Swing OB Breakout',    'Price broke bearish swing OB')
 
-alertcondition(currentAlerts.equalHighs,                'Equal Highs',                  'Equal highs detected')
-alertcondition(currentAlerts.equalLows,                 'Equal Lows',                   'Equal lows detected')
+alertcondition(effEnableTrailingAlerts and currentAlerts.equalHighs,                'Equal Highs',                  'Equal highs detected')
+alertcondition(effEnableTrailingAlerts and currentAlerts.equalLows,                 'Equal Lows',                   'Equal lows detected')
 
-alertcondition(currentAlerts.bullishFairValueGap,       'Bullish FVG',                  'Bullish FVG formed')
-alertcondition(currentAlerts.bearishFairValueGap,       'Bearish FVG',                  'Bearish FVG formed')
+alertcondition(effEnableTrailingAlerts and currentAlerts.bullishFairValueGap,       'Bullish FVG',                  'Bullish FVG formed')
+alertcondition(effEnableTrailingAlerts and currentAlerts.bearishFairValueGap,       'Bearish FVG',                  'Bearish FVG formed')
 
 //---------------------------------------------------------------------------------------------------------------------}
