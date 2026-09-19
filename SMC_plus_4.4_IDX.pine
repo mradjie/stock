@@ -58,6 +58,9 @@ indicator('SMC Plus v4.4 IDX', 'SMC Plus v4.4 IDX', overlay = true, max_labels_c
 //      at the 64-plot limit.
 //      MARKER STACK: MFI, RSC and KRI now share one ATR-based step, so they sit in fixed slots from the wick
 //      outwards (MFI triangle, RSC dot, KRI label) at any zoom. "Marker Spacing (x ATR)" sets the step.
+// [C4b] IDX session shading softened: the three windows used blue / purple / orange, which repeated every day on
+//      intraday charts. They now share one muted grey (#787b86) and differ only in transparency: pre-closing 92,
+//      opening 94, session 2 96.
 // ---------------------------------------------------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -713,14 +716,14 @@ arbPercentInput = input.float(15, 'ARB %', minval = 1, maxval = 100, group = IDX
 araColorInput = input.color(color.new(#00e676, 0), 'ARA', group = IDX_GROUP, inline = 'limcol')
 arbColorInput = input.color(color.new(#ff1744, 0), 'ARB', group = IDX_GROUP, inline = 'limcol')
 // [C4] IDX session windows, display only
-showIdxSessionsInput = input.bool(true, 'Shade IDX Session Windows', group = IDX_GROUP, tooltip = 'Intraday charts only, Asia/Jakarta time.\n\nOpening: 09:00-09:30, right after the pre-opening auction, where most of the day\'s gap and stop runs happen.\nSession 2 open: 13:30-14:00 Mon-Thu, 14:00-14:30 Fri.\nPre-closing: 15:50-16:00, the closing auction that sets the official close.\n\nContext only: nothing is filtered by it.')
+showIdxSessionsInput = input.bool(true, 'Shade IDX Session Windows', group = IDX_GROUP, tooltip = 'Intraday charts only, Asia/Jakarta time.\n\nOpening: 09:00-09:30, right after the pre-opening auction, where most of the day\'s gap and stop runs happen.\nSession 2 open: 13:30-14:00 Mon-Thu, 14:00-14:30 Fri.\nPre-closing: 15:50-16:00, the closing auction that sets the official close.\n\nAll three use one muted grey by default and differ only in strength (pre-closing strongest, session 2 faintest), so the chart does not flash three colours every day. Each colour can still be changed.\n\nContext only: nothing is filtered by it.')
 idxOpenSessionInput = input.session('0900-0930', 'Opening', group = IDX_GROUP, inline = 'sess1')
-idxOpenColorInput = input.color(color.new(#2962ff, 92), '', group = IDX_GROUP, inline = 'sess1')
+idxOpenColorInput = input.color(color.new(#787b86, 94), '', group = IDX_GROUP, inline = 'sess1')
 idxSession2InputMonThu = input.session('1330-1400', 'Session 2 Mon-Thu', group = IDX_GROUP, inline = 'sess2')
 idxSession2InputFri = input.session('1400-1430', 'Fri', group = IDX_GROUP, inline = 'sess2')
-idxSession2ColorInput = input.color(color.new(#ab47bc, 92), '', group = IDX_GROUP, inline = 'sess2')
+idxSession2ColorInput = input.color(color.new(#787b86, 96), '', group = IDX_GROUP, inline = 'sess2')
 idxCloseSessionInput = input.session('1550-1600', 'Pre-closing', group = IDX_GROUP, inline = 'sess3')
-idxCloseColorInput = input.color(color.new(#ff9800, 90), '', group = IDX_GROUP, inline = 'sess3')
+idxCloseColorInput = input.color(color.new(#787b86, 92), '', group = IDX_GROUP, inline = 'sess3')
 
 //---------------------------------------------------------------------------------------------------------------------}
 //DATA STRUCTURES & VARIABLES
