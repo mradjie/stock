@@ -68,6 +68,10 @@ indicator('SMC Plus v4.3 IDX', 'SMC Plus v4.3 IDX', overlay = true, max_labels_c
 // [D43] PDH/PDL and PWH/PWL pools OFF (swing and EQH/EQL pools stay on). Keep Mitigated OBs Visible ON.
 //       Fair Value Gaps ON with Non-Repainting HTF ON. MFI levels 85 / 15 (were 90 / 10). IDX Mode ON (was
 //       Auto). Signal Statistics Table OFF: switch it on when A/B testing a filter.
+//
+// [L1] BUG FIX, found testing on IDX:GOTO: a stock parked at the Rp 50 floor was flagged ARB on every bar,
+//      because the floor-clamped ARB level equalled the previous close. ARB now requires the limit to sit
+//      below the previous close.
 // ---------------------------------------------------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -956,7 +960,9 @@ float araLevel = math.floor(araRaw / idxTick(araRaw)) * idxTick(araRaw)
 float arbLevel = math.max(math.ceil(arbRaw / idxTick(arbRaw)) * idxTick(arbRaw), idxPrevDailyClose >= 50 ? 50.0 : 0.0)
 
 bool araTouched = idxLimitActive and high >= araLevel
-bool arbTouched = idxLimitActive and low <= arbLevel
+// [L1] a limit at or above the previous close leaves no room to fall. That is the Rp 50 floor case: a stock
+//      parked at Rp 50 used to be flagged ARB (and limit-locked) on every single bar.
+bool arbTouched = idxLimitActive and arbLevel < idxPrevDailyClose and low <= arbLevel
 // locked = closed AT the limit, so there was no two-sided market at the close
 bool araLocked = araTouched and close >= araLevel
 bool arbLocked = arbTouched and close <= arbLevel
