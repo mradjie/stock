@@ -63,6 +63,11 @@ indicator('SMC Plus v4.3 IDX', 'SMC Plus v4.3 IDX', overlay = true, max_labels_c
 //      "PWH Sweep". Several pools swept by one bar on one side share a single label ("PWH · SH") instead of
 //      stacking. Open pool lines are dotted and 60% transparent by default, swept ones fainter still. Both
 //      the style and the transparency are inputs.
+//
+// --- DEFAULTS (v4.3) ---
+// [D43] PDH/PDL and PWH/PWL pools OFF (swing and EQH/EQL pools stay on). Keep Mitigated OBs Visible ON.
+//       Fair Value Gaps ON with Non-Repainting HTF ON. MFI levels 85 / 15 (were 90 / 10). IDX Mode ON (was
+//       Auto). Signal Statistics Table OFF: switch it on when A/B testing a filter.
 // ---------------------------------------------------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -473,7 +478,7 @@ enableStatusBasedSystemInput = input.bool(true, 'Enable Status-Based System', gr
 showConfirmationZonesInput = input.bool(true, 'Show Confirmation Zones', group = BLOCKS_GROUP, tooltip = 'Show extended zones for untouched Order Blocks')
 confirmationZoneExtensionInput = input.int(50, 'Confirmation Zone Extension', group = BLOCKS_GROUP, tooltip = 'Number of bars to extend confirmation zones', minval = 10, maxval = 200)
 confirmationZoneOpacityInput = input.int(85, 'Confirmation Zone Opacity', group = BLOCKS_GROUP, tooltip = 'Opacity for confirmation zones (0-100)', minval = 0, maxval = 100)
-keepMitigatedOBInput = input.bool(false, 'Keep Mitigated OBs Visible', group = BLOCKS_GROUP, tooltip = 'Show mitigated order blocks with reduced opacity')
+keepMitigatedOBInput = input.bool(true, 'Keep Mitigated OBs Visible', group = BLOCKS_GROUP, tooltip = 'Show mitigated order blocks with reduced opacity')
 showOBStatusLabelsInput = input.bool(true, 'Show OB Status Labels', group = BLOCKS_GROUP, tooltip = 'Show status labels on order blocks')
 internalBullishOrderBlockColor = input.color(color.new(#3179f5, 80), 'Internal Bullish OB', group = BLOCKS_GROUP)
 internalBearishOrderBlockColor = input.color(color.new(#f77c80, 80), 'Internal Bearish OB', group = BLOCKS_GROUP)
@@ -490,8 +495,8 @@ equalHighsLowsSizeInput = input.string(TINY, 'Label Size', group = EQUAL_GROUP, 
 showLiquiditySweepsInput = input.bool(true, 'Track Liquidity Sweeps', group = SWEEP_GROUP, tooltip = 'Treats each equal high / equal low as a resting liquidity pool and watches whether price raids it.\n\nA pool is SWEPT when price wicks through and closes back on the original side. A pool that price closes through and holds beyond is discarded, because that is acceptance rather than a stop hunt.\n\nRequires equal high/low detection, which this option enables on its own if the EQH/EQL section is switched off.')
 // [C1] pool sources. EQH/EQL are always a source whenever sweeps are tracked.
 sweepSwingPoolsInput = input.bool(true, 'Swing Highs/Lows', group = SWEEP_GROUP, inline = 'poolsrc1', tooltip = 'Additional liquidity pools besides equal highs/lows.\n\nSwing: every confirmed swing pivot (Swing Structure length).\nPDH/PDL: previous day high/low, intraday charts only.\nPWH/PWL: previous week high/low, daily and intraday charts.')
-sweepDailyPoolsInput = input.bool(true, 'PDH/PDL', group = SWEEP_GROUP, inline = 'poolsrc1')
-sweepWeeklyPoolsInput = input.bool(true, 'PWH/PWL', group = SWEEP_GROUP, inline = 'poolsrc1')
+sweepDailyPoolsInput = input.bool(false, 'PDH/PDL', group = SWEEP_GROUP, inline = 'poolsrc1')
+sweepWeeklyPoolsInput = input.bool(false, 'PWH/PWL', group = SWEEP_GROUP, inline = 'poolsrc1')
 liquiditySweepMaxInput = input.int(20, 'Max Tracked Pools', group = SWEEP_GROUP, minval = 1, maxval = 50, tooltip = 'Oldest pools are dropped first, along with their drawings. Shared by every pool source.')
 sweepWindowInput = input.int(2, 'Rejection Window (bars)', group = SWEEP_GROUP, minval = 0, tooltip = 'How many bars price has to close back on the original side after piercing a pool.\n\n0 requires the rejection on the piercing bar itself, which is the strictest reading. Larger values accept slower reversals but also let more genuine breakouts be mislabelled as sweeps.')
 sweepReversalWindowInput = input.int(10, 'Reversal Confluence Window (bars)', group = SWEEP_GROUP, minval = 1, tooltip = 'A CHoCH against the swept side within this many bars of a sweep raises the "Sweep Reversal" alert. This pairing is the actual setup; a sweep on its own is only context.')
@@ -503,11 +508,11 @@ poolLineTransparencyInput = input.int(60, 'Transparency', minval = 0, maxval = 1
 liquidityBuysideColorInput = input.color(RED, 'Buyside Pool (EQH)', group = SWEEP_GROUP, inline = 'sweepcol')
 liquiditySellsideColorInput = input.color(GREEN, 'Sellside Pool (EQL)', group = SWEEP_GROUP, inline = 'sweepcol')
 
-showFairValueGapsInput = input(false, 'Fair Value Gaps', group = GAPS_GROUP, tooltip = showFairValueGapsTooltip)
+showFairValueGapsInput = input(true, 'Fair Value Gaps', group = GAPS_GROUP, tooltip = showFairValueGapsTooltip)
 fairValueGapsThresholdInput = input(true, 'Auto Threshold', group = GAPS_GROUP, tooltip = fairValueGapsThresholdTooltip)
 fairValueGapsTimeframeInput = input.timeframe('', 'Timeframe', group = GAPS_GROUP, tooltip = fairValueGapsTimeframeTooltip)
 // [E18] guards against the lookahead leak on higher timeframes
-fairValueGapsNonRepaintingInput = input.bool(false, 'Non-Repainting HTF', group = GAPS_GROUP, tooltip = 'When the FVG timeframe is higher than the chart timeframe, the original logic reads the current, still-forming HTF bar. Historical gaps therefore appear with information that was not available in real time.\n\nEnabling this uses only confirmed HTF bars, so gaps appear one HTF bar later but never repaint.\n\nHas no effect when the FVG timeframe is left empty (chart timeframe), where no leak exists.')
+fairValueGapsNonRepaintingInput = input.bool(true, 'Non-Repainting HTF', group = GAPS_GROUP, tooltip = 'When the FVG timeframe is higher than the chart timeframe, the original logic reads the current, still-forming HTF bar. Historical gaps therefore appear with information that was not available in real time.\n\nEnabling this uses only confirmed HTF bars, so gaps appear one HTF bar later but never repaint.\n\nHas no effect when the FVG timeframe is left empty (chart timeframe), where no leak exists.')
 fairValueGapsBullColorInput = input.color(color.new(#00ff68, 70), 'Bullish FVG', group = GAPS_GROUP)
 fairValueGapsBearColorInput = input.color(color.new(#ff0008, 70), 'Bearish FVG', group = GAPS_GROUP)
 fairValueGapsExtendInput = input.int(1, 'Extend FVG', group = GAPS_GROUP, tooltip = fairValueGapsExtendTooltip, minval = 0)
@@ -563,8 +568,8 @@ kamaColorInput = input.color(color.new(#ffeb3b, 0), 'KAMA', group = MA_GROUP)
 showMfiSignalsInput = input.bool(true, 'MFI Overbought / Oversold Signals', group = MFI_GROUP, tooltip = 'Marks bars where the Money Flow Index sits at an extreme: a down triangle above the bar when overbought, an up triangle below the bar when oversold.\n\nMFI is volume weighted, so it returns nothing on symbols that carry no volume data. The markers simply will not appear there rather than erroring.')
 mfiLengthInput = input.int(14, 'MFI Length', minval = 1, maxval = 500, group = MFI_GROUP)
 mfiSourceInput = input.source(hlc3, 'MFI Source', group = MFI_GROUP, tooltip = 'Typical price (hlc3) is the standard input for money flow.')
-mfiOverboughtInput = input.float(90, 'Overbought Above', minval = 50, maxval = 100, step = 1, group = MFI_GROUP, inline = 'mfilvl')
-mfiOversoldInput = input.float(10, 'Oversold Below', minval = 0, maxval = 50, step = 1, group = MFI_GROUP, inline = 'mfilvl')
+mfiOverboughtInput = input.float(85, 'Overbought Above', minval = 50, maxval = 100, step = 1, group = MFI_GROUP, inline = 'mfilvl')
+mfiOversoldInput = input.float(15, 'Oversold Below', minval = 0, maxval = 50, step = 1, group = MFI_GROUP, inline = 'mfilvl')
 mfiOverboughtColorInput = input.color(RED, 'Overbought', group = MFI_GROUP, inline = 'mficol')
 mfiOversoldColorInput = input.color(GREEN, 'Oversold', group = MFI_GROUP, inline = 'mficol')
 mfiOnlyOnEntryInput = input.bool(false, 'Only Mark Zone Entry', group = MFI_GROUP, tooltip = 'Off: every bar sitting at the extreme is marked. This is the literal reading of "MFI above 90" and the default.\n\nOn: only the first bar of each excursion is marked. Much cleaner in strong trends, where MFI can hold beyond the level for many bars and produce a solid run of triangles.')
@@ -586,7 +591,7 @@ regimeVolatileRangeColorInput = input.color(#ef5350, 'Volatile Range', group = R
 regimeCompressionColorInput = input.color(#42a5f5, 'Compression', group = REGIME_GROUP)
 
 // [L-STAT] Signal statistics. Measurement only: nothing here feeds a signal, a drawing or an alert.
-statsEnabledInput = input.bool(true, 'Signal Statistics Table', group = STATS_GROUP, tooltip = 'Tracks every structure and sweep-reversal signal forward to a mechanical resolution and reports how each signal type actually performed on this chart.\n\nThis is NOT a backtest. There is no spread, no slippage, no position sizing and no trade management, and every signal type is measured against the same volatility-normalised stop so that the rows are comparable to each other. It measures SIGNAL QUALITY, not strategy P&L.\n\nIts purpose is A/B testing: the rows count the signals that survive your CURRENT settings, so toggling the displacement filter or the HTF bias filter and watching these numbers move is the intended workflow.')
+statsEnabledInput = input.bool(false, 'Signal Statistics Table', group = STATS_GROUP, tooltip = 'Tracks every structure and sweep-reversal signal forward to a mechanical resolution and reports how each signal type actually performed on this chart.\n\nThis is NOT a backtest. There is no spread, no slippage, no position sizing and no trade management, and every signal type is measured against the same volatility-normalised stop so that the rows are comparable to each other. It measures SIGNAL QUALITY, not strategy P&L.\n\nIts purpose is A/B testing: the rows count the signals that survive your CURRENT settings, so toggling the displacement filter or the HTF bias filter and watching these numbers move is the intended workflow.')
 statsAtrLengthInput = input.int(14, 'Risk ATR Length', minval = 1, maxval = 200, group = STATS_GROUP, tooltip = 'ATR used to size the risk unit. Deliberately shorter than the ATR(200) used elsewhere in the script, so the stop reflects volatility around the signal rather than the volatility of the whole chart.')
 statsRiskAtrMultInput = input.float(1.0, 'Stop Distance (x ATR)', minval = 0.1, maxval = 10.0, step = 0.1, group = STATS_GROUP, tooltip = 'One risk unit, 1R, as a multiple of ATR.\n\nAn ATR stop is used rather than a structural one on purpose: a structural stop makes R mean something different for every signal, which would make the rows incomparable. The cost is that these numbers are not what a structural-stop trader would experience.')
 statsTargetRInput = input.float(2.0, 'Target (R)', minval = 0.5, maxval = 20.0, step = 0.5, group = STATS_GROUP, tooltip = 'Reward multiple that counts as a win. The break-even win rate is 1 / (1 + Target), so the Win% column is coloured against that line rather than against 50%.')
@@ -603,7 +608,7 @@ statsBuyFeeInput = input.float(0.15, 'Buy Fee %', minval = 0.0, maxval = 2.0, st
 statsSellFeeInput = input.float(0.25, 'Sell Fee %', minval = 0.0, maxval = 2.0, step = 0.01, group = STATS_GROUP, inline = 'fees')
 
 // [IDX1][IDX2] Indonesia Stock Exchange specifics
-idxModeInput = input.string(IDX_AUTO, 'IDX Mode', options = [IDX_AUTO, IDX_ON, IDX_OFF], group = IDX_GROUP, tooltip = 'Enables the IDX tick size (fraksi harga) and ARA/ARB logic.\n\nAuto: on when the symbol prefix is IDX.')
+idxModeInput = input.string(IDX_ON, 'IDX Mode', options = [IDX_AUTO, IDX_ON, IDX_OFF], group = IDX_GROUP, tooltip = 'Enables the IDX tick size (fraksi harga) and ARA/ARB logic.\n\nAuto: on when the symbol prefix is IDX.')
 eqhMinTicksInput = input.int(2, 'EQH/EQL Min Tolerance (ticks)', minval = 0, maxval = 20, group = IDX_GROUP, tooltip = 'Equal highs/lows tolerance becomes max(Threshold x ATR, this many ticks). On a Rp 50-500 stock 0.1 x ATR is often smaller than a single tick, which made EQH/EQL require an exact match.')
 fvgMinTicksInput = input.int(2, 'FVG Min Width (ticks)', minval = 0, maxval = 20, group = IDX_GROUP, tooltip = 'Fair value gaps narrower than this many ticks are ignored. A one-tick gap on IDX is an artefact of the price grid, not an imbalance.')
 showLimitBarsInput = input.bool(true, 'Mark ARA / ARB Bars', group = IDX_GROUP, tooltip = 'Marks bars that reached the auto rejection limit, measured against the previous daily close. Intraday and daily charts only.\n\nThe limit price is rounded to the tick grid, so treat the mark as an approximation. Acceleration board and watch-list (FCA) stocks use different limits and are not modelled.')
