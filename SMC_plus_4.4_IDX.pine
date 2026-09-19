@@ -51,6 +51,13 @@ indicator('SMC Plus v4.4 IDX', 'SMC Plus v4.4 IDX', overlay = true, max_labels_c
 // [RS2] RSC markers changed from size.tiny diamonds (the smallest plotshape) to a '•' plotchar at size.tiny,
 //      70% opaque, which renders noticeably smaller and keeps long runs of markers unobtrusive. The MFI
 //      triangles get the same treatment: '▾' / '▴' plotchar glyphs at size.tiny, 70% opaque.
+// [KRI1] Kairi Relative Index: KRI = (close - MA25) / MA25 x 100. A tiny "Flop" label above the candle when KRI
+//      enters overbought (default +10%), "Flip" below when it enters oversold (default -10%); an Adaptive mode
+//      uses the stock's own 95th / 5th percentile KRI over 250 bars instead. One label per excursion, last 40
+//      kept, KRI value in the tooltip, alerts via alert() ("Any alert() function call") because the script is
+//      at the 64-plot limit.
+//      MARKER STACK: MFI, RSC and KRI now share one ATR-based step, so they sit in fixed slots from the wick
+//      outwards (MFI triangle, RSC dot, KRI label) at any zoom. "Marker Spacing (x ATR)" sets the step.
 // ---------------------------------------------------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -421,6 +428,11 @@ HTF_GROUP = 'Higher Timeframe Bias'
 MA_GROUP = 'Moving Averages'
 MFI_GROUP = 'Money Flow Index'
 RSC_GROUP = 'Relative Strength (RSC)'
+KRI_GROUP = 'Kairi Relative Index (KRI)'
+
+// [KRI1] KRI zone modes
+KRI_FIXED = 'Fixed %'
+KRI_ADAPTIVE = 'Adaptive'
 
 // [RS1] RSC normalisation methods
 RSC_STOCH = 'Stochastic'
@@ -631,6 +643,22 @@ rscLowerInput = input.float(20, 'Weak Below', minval = 0, maxval = 50, step = 1,
 rscStrongColorInput = input.color(#2962ff, 'Strong', group = RSC_GROUP, inline = 'rsccol')
 rscWeakColorInput = input.color(#ff6d00, 'Weak', group = RSC_GROUP, inline = 'rsccol')
 rscOnlyOnEntryInput = input.bool(false, 'Only Mark Zone Entry', group = RSC_GROUP, tooltip = 'Off: every bar beyond the level is marked, the literal reading of "RSC above 80".\n\nOn: only the first bar of each excursion. Relative strength tends to persist for weeks, so this is much tidier on a trending stock.')
+
+// [KRI1] Kairi Relative Index. Display and alert() only.
+showKriInput = input.bool(true, 'Kairi Relative Index (KRI)', group = KRI_GROUP, tooltip = 'KRI = (close - moving average) / moving average x 100: how far, in percent, price has stretched away from its average. A large positive KRI is overextended to the upside (overbought), a large negative one to the downside (oversold).\n\n"Flop" (above the candle) marks the bar KRI ENTERS the overbought zone, "Flip" (below the candle) the bar it enters the oversold zone. One label per excursion, not one per bar. Hover a label for the KRI value.\n\nAlerts use alert(): create an alert on this indicator and choose "Any alert() function call". The script is at Pine\'s 64-plot limit, so no alertcondition could be added.')
+kriLengthInput = input.int(25, 'MA Length', minval = 2, maxval = 500, group = KRI_GROUP, inline = 'krima', tooltip = '25 is the classic Japanese "25-day kairi" for stocks.')
+kriMaTypeInput = input.string(MA_SMA, '', options = [MA_SMA, MA_EMA], group = KRI_GROUP, inline = 'krima')
+kriModeInput = input.string(KRI_FIXED, 'Zones', options = [KRI_FIXED, KRI_ADAPTIVE], group = KRI_GROUP, tooltip = 'Fixed: overbought / oversold at the percentages below.\n\nAdaptive: the zones are this stock\'s own extreme KRI readings, the upper and lower percentile of KRI over the lookback. Useful because a quiet blue chip rarely stretches 10% from its average while a small cap does it every month.')
+kriOverboughtInput = input.float(10, 'Overbought Above %', minval = 0.5, maxval = 100, step = 0.5, group = KRI_GROUP, inline = 'krifix')
+kriOversoldInput = input.float(-10, 'Oversold Below %', minval = -100, maxval = -0.5, step = 0.5, group = KRI_GROUP, inline = 'krifix')
+kriPercentileInput = input.float(95, 'Adaptive Percentile', minval = 80, maxval = 99.5, step = 0.5, group = KRI_GROUP, inline = 'kriadp', tooltip = '95 = overbought is the top 5% of KRI readings and oversold the bottom 5%, over the lookback.')
+kriAdaptiveLookbackInput = input.int(250, 'Lookback', minval = 50, maxval = 2000, group = KRI_GROUP, inline = 'kriadp')
+kriFlopColorInput = input.color(#e91e63, 'Flop', group = KRI_GROUP, inline = 'kricol')
+kriFlipColorInput = input.color(#00897b, 'Flip', group = KRI_GROUP, inline = 'kricol')
+kriMaxLabelsInput = input.int(40, 'Keep Last Labels', minval = 1, maxval = 200, group = KRI_GROUP, tooltip = 'Older Flip / Flop labels are removed so they cannot crowd structure labels out of the 500-label budget.')
+
+// [KRI1] one spacing for all three candle markers, so they always stack in the same order at any zoom
+markerSpacingInput = input.float(0.35, 'Marker Spacing (x ATR)', minval = 0.1, maxval = 2.0, step = 0.05, group = KRI_GROUP, tooltip = 'Distance between the stacked candle markers, as a multiple of ATR(14). From the wick outwards: MFI triangle, RSC dot, KRI Flip / Flop label.')
 
 // [W1] Wyckoff phase. Display and alerts only: nothing in the signal path reads it.
 showRegimeInput = input.bool(true, 'Wyckoff Phase Detection', group = REGIME_GROUP, tooltip = 'Classifies the market into the four Wyckoff phases.\n\nStep 1, trend or trading range: Kaufman\'s efficiency ratio, ranked against its own history with hysteresis. Trending + rising = MARKUP, trending + falling = MARKDOWN.\n\nStep 2, which kind of trading range: four votes, +1 for accumulation or -1 for distribution:\n- Prior trend: a range after a markdown leans accumulation, after a markup distribution\n- Location: lower part of the long-term range leans accumulation, upper part distribution\n- Effort (volume): more volume on up-closes than down-closes leans accumulation\n- Events: a recent SPRING (dip below the range low that closes back inside) leans accumulation, an UPTHRUST distribution\n\nThe sum picks the phase when a range starts. Inside a range the label only switches when the evidence clearly turns (score of 2 or more against it), so it does not flicker.\n\nContext only: it does not filter, dim or suppress any signal. The phase readout at the right edge prints the score and the four votes behind it: P prior trend, L location, V volume effort, E spring/upthrust event.')
@@ -2364,10 +2392,20 @@ bool mfiOverboughtSignal = showMfiSignalsInput and (mfiOnlyOnEntryInput ? mfiOve
 bool mfiOversoldSignal = showMfiSignalsInput and (mfiOnlyOnEntryInput ? mfiOversold and not mfiOversold[1] : mfiOversold)
 
 // [L2] not drawn where an ARA/ARB marker occupies the same side of the bar; the alerts below are unaffected
+// [KRI1] STACKED CANDLE MARKERS. All three indicators share one price-based step, so they sit in fixed slots
+//        that keep their order at any zoom (location.abovebar is a pixel offset and cannot be mixed reliably
+//        with price offsets):
+//          slot 1  MFI triangle   high + 1 step   /  low - 1 step
+//          slot 2  RSC dot        high + 2 steps  /  low - 2 steps
+//          slot 3  KRI label      text starts beyond high + 3 steps  /  low - 3 steps
+float markerStep = nz(ta.atr(14)) * markerSpacingInput
+
 // [RS2] small triangle glyphs via plotchar, same treatment as the RSC dots: a character at size.tiny renders
 //       smaller than the smallest plotshape. Still triangles, so they stay distinct from the round RSC dots.
-plotchar(mfiOverboughtSignal and not (showLimitBarsInput and araTouched), title = 'MFI Overbought', char = '▾', location = location.abovebar, color = color.new(mfiOverboughtColorInput, 30), size = size.tiny)
-plotchar(mfiOversoldSignal and not (showLimitBarsInput and arbTouched), title = 'MFI Oversold', char = '▴', location = location.belowbar, color = color.new(mfiOversoldColorInput, 30), size = size.tiny)
+bool mfiOverboughtMarker = mfiOverboughtSignal and not (showLimitBarsInput and araTouched)
+bool mfiOversoldMarker = mfiOversoldSignal and not (showLimitBarsInput and arbTouched)
+plotchar(mfiOverboughtMarker ? high + markerStep : na, title = 'MFI Overbought', char = '▾', location = location.absolute, color = color.new(mfiOverboughtColorInput, 30), size = size.tiny)
+plotchar(mfiOversoldMarker ? low - markerStep : na, title = 'MFI Oversold', char = '▴', location = location.absolute, color = color.new(mfiOversoldColorInput, 30), size = size.tiny)
 
 //---------------------------------------------------------------------------------------------------------------------}
 //RELATIVE STRENGTH COMPARISON
@@ -2388,19 +2426,55 @@ bool rscWeak = rscValue < rscLowerInput
 bool rscStrongSignal = showRscInput and (rscOnlyOnEntryInput ? rscStrong and not rscStrong[1] : rscStrong)
 bool rscWeakSignal = showRscInput and (rscOnlyOnEntryInput ? rscWeak and not rscWeak[1] : rscWeak)
 
-// [RS1] Round dots (see [RS2]), so they cannot be confused with the MFI triangles, placed at an absolute price one ATR(14)
-//       beyond the wick. location.abovebar would put them on exactly the spot the MFI triangle and the ARA/ARB
-//       labels already use, and TradingView does not stack shapes that share a location.
-// [RS1] ONE plotshape for both sides (price and colour are series), because the script sits at Pine's
-//       64-plot limit: every plot, plotshape, bgcolor and alertcondition counts towards it.
-float rscOffset = nz(ta.atr(14)) * 0.9
-float rscMarkerPrice = rscStrongSignal ? high + rscOffset : rscWeakSignal ? low - rscOffset : na
+// [RS1] Round dots (see [RS2]), so they cannot be confused with the MFI triangles, in slot 2 of the marker
+//       stack (see [KRI1] in the MFI section): two marker steps beyond the wick.
+// [RS1] ONE plot for both sides (price and colour are series), because the script sits at Pine's 64-plot
+//       limit: every plot, plotshape, plotchar, bgcolor and alertcondition counts towards it.
+float rscMarkerPrice = rscStrongSignal ? high + 2 * markerStep : rscWeakSignal ? low - 2 * markerStep : na
 color rscMarkerColor = rscStrongSignal ? color.new(rscStrongColorInput, 30) : color.new(rscWeakColorInput, 30)
 // [RS2] a small bullet glyph via plotchar: size.tiny is already the smallest plotshape, and a character at
 //       size.tiny renders noticeably smaller than a shape, which keeps long runs of markers unobtrusive
 plotchar(rscMarkerPrice, title = 'RSC Strong / Weak', char = '•', location = location.absolute, color = rscMarkerColor, size = size.tiny)
 // value for the Data Window only, so no line is drawn on the price scale
 plot(showRscInput ? rscValue : na, 'RSC', color = rscStrongColorInput, display = display.data_window)
+
+//---------------------------------------------------------------------------------------------------------------------}
+//KAIRI RELATIVE INDEX
+//---------------------------------------------------------------------------------------------------------------------{
+// [KRI1] KRI = (close - MA) / MA x 100. "Flop" marks the bar KRI enters the overbought zone, "Flip" the bar it
+//        enters the oversold zone: one label per excursion, since a stretched stock can sit in the zone for many
+//        bars. Labels (not plots) are used so they cost nothing against the 64-plot limit, sit in slot 3 of the
+//        marker stack above the MFI triangle and the RSC dot, and are capped at the last N.
+// ta.* calls computed on every bar and selected afterwards, for the same consistency reason as movingAverage()
+float kriSma = ta.sma(close, kriLengthInput)
+float kriEma = ta.ema(close, kriLengthInput)
+float kriBase = kriMaTypeInput == MA_SMA ? kriSma : kriEma
+float kriValue = kriBase != 0 ? (close - kriBase) / kriBase * 100 : na
+
+float kriAdaptiveUpper = ta.percentile_linear_interpolation(kriValue, kriAdaptiveLookbackInput, kriPercentileInput)
+float kriAdaptiveLower = ta.percentile_linear_interpolation(kriValue, kriAdaptiveLookbackInput, 100 - kriPercentileInput)
+float kriUpper = kriModeInput == KRI_FIXED ? kriOverboughtInput : kriAdaptiveUpper
+float kriLower = kriModeInput == KRI_FIXED ? kriOversoldInput : kriAdaptiveLower
+
+bool kriOverbought = not na(kriValue) and not na(kriUpper) and kriValue >= kriUpper
+bool kriOversold = not na(kriValue) and not na(kriLower) and kriValue <= kriLower
+bool kriFlop = showKriInput and kriOverbought and not kriOverbought[1]
+bool kriFlip = showKriInput and kriOversold and not kriOversold[1]
+
+var array<label> kriLabels = array.new<label>()
+if kriFlop
+    kriLabels.push(label.new(bar_index, high + 3 * markerStep, 'Flop', xloc.bar_index, yloc.price, color(na), label.style_label_down, color.new(kriFlopColorInput, 15), size.tiny, tooltip = 'KRI ' + str.tostring(kriValue, '0.0') + '% entered overbought (' + str.tostring(kriUpper, '0.0') + '%)'))
+if kriFlip
+    kriLabels.push(label.new(bar_index, low - 3 * markerStep, 'Flip', xloc.bar_index, yloc.price, color(na), label.style_label_up, color.new(kriFlipColorInput, 15), size.tiny, tooltip = 'KRI ' + str.tostring(kriValue, '0.0') + '% entered oversold (' + str.tostring(kriLower, '0.0') + '%)'))
+while kriLabels.size() > kriMaxLabelsInput
+    label.delete(kriLabels.shift())
+
+// [KRI1] alert() rather than alertcondition(): alertcondition counts as a plot and the script is at the limit.
+//        Create the alert with "Any alert() function call". Confirmed bars only, so it cannot fire and un-fire.
+if kriFlop and barstate.isconfirmed
+    alert(syminfo.ticker + ' KRI Flop: ' + str.tostring(kriValue, '0.0') + '% entered overbought', alert.freq_once_per_bar_close)
+if kriFlip and barstate.isconfirmed
+    alert(syminfo.ticker + ' KRI Flip: ' + str.tostring(kriValue, '0.0') + '% entered oversold', alert.freq_once_per_bar_close)
 
 //---------------------------------------------------------------------------------------------------------------------}
 //WYCKOFF PHASE
