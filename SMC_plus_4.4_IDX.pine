@@ -38,6 +38,11 @@ indicator('SMC Plus v4.4 IDX', 'SMC Plus v4.4 IDX', overlay = true, max_labels_c
 //      STILL DISPLAY ONLY, like [K-REG]: no structure, order block, gap, sweep, filter or statistics path reads
 //      the phase. Wyckoff's finer schematic events (PS, SC, AR, ST, SOS, LPS, BC, SOW, LPSY) are not labelled;
 //      the four phases are a coarse, mechanical reading and deserve the same scepticism as any filter here.
+// [W2] Wyckoff drawings moved to the bottom layer. Range boxes and the phase readout are allocated on the
+//      first bar, before every other box pool, and only reused afterwards: Pine draws the earliest-created
+//      box underneath, so order blocks, confirmation zones and gaps now sit on top of them. The phase readout
+//      is text in a borderless box instead of a label (labels always render above boxes and lines); since
+//      boxes have no tooltip, the four votes are printed on its second line.
 // ---------------------------------------------------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -603,7 +608,7 @@ mfiOversoldColorInput = input.color(GREEN, 'Oversold', group = MFI_GROUP, inline
 mfiOnlyOnEntryInput = input.bool(false, 'Only Mark Zone Entry', group = MFI_GROUP, tooltip = 'Off: every bar sitting at the extreme is marked. This is the literal reading of "MFI above 90" and the default.\n\nOn: only the first bar of each excursion is marked. Much cleaner in strong trends, where MFI can hold beyond the level for many bars and produce a solid run of triangles.')
 
 // [W1] Wyckoff phase. Display and alerts only: nothing in the signal path reads it.
-showRegimeInput = input.bool(true, 'Wyckoff Phase Detection', group = REGIME_GROUP, tooltip = 'Classifies the market into the four Wyckoff phases.\n\nStep 1, trend or trading range: Kaufman\'s efficiency ratio, ranked against its own history with hysteresis. Trending + rising = MARKUP, trending + falling = MARKDOWN.\n\nStep 2, which kind of trading range: four votes, +1 for accumulation or -1 for distribution:\n- Prior trend: a range after a markdown leans accumulation, after a markup distribution\n- Location: lower part of the long-term range leans accumulation, upper part distribution\n- Effort (volume): more volume on up-closes than down-closes leans accumulation\n- Events: a recent SPRING (dip below the range low that closes back inside) leans accumulation, an UPTHRUST distribution\n\nThe sum picks the phase when a range starts. Inside a range the label only switches when the evidence clearly turns (score of 2 or more against it), so it does not flicker.\n\nContext only: it does not filter, dim or suppress any signal. Hover the phase label for the votes behind it.')
+showRegimeInput = input.bool(true, 'Wyckoff Phase Detection', group = REGIME_GROUP, tooltip = 'Classifies the market into the four Wyckoff phases.\n\nStep 1, trend or trading range: Kaufman\'s efficiency ratio, ranked against its own history with hysteresis. Trending + rising = MARKUP, trending + falling = MARKDOWN.\n\nStep 2, which kind of trading range: four votes, +1 for accumulation or -1 for distribution:\n- Prior trend: a range after a markdown leans accumulation, after a markup distribution\n- Location: lower part of the long-term range leans accumulation, upper part distribution\n- Effort (volume): more volume on up-closes than down-closes leans accumulation\n- Events: a recent SPRING (dip below the range low that closes back inside) leans accumulation, an UPTHRUST distribution\n\nThe sum picks the phase when a range starts. Inside a range the label only switches when the evidence clearly turns (score of 2 or more against it), so it does not flicker.\n\nContext only: it does not filter, dim or suppress any signal. The phase readout at the right edge prints the score and the four votes behind it: P prior trend, L location, V volume effort, E spring/upthrust event.')
 regimeErLengthInput = input.int(20, 'Efficiency Ratio Length', minval = 2, maxval = 200, group = REGIME_GROUP, tooltip = 'Lookback for the net-move over total-move calculation, and for the direction of a trend. Shorter reacts faster and is noisier.')
 regimeErSmoothInput = input.int(5, 'Efficiency Ratio Smoothing', minval = 1, maxval = 50, group = REGIME_GROUP, tooltip = 'The raw efficiency ratio is jumpy on short lookbacks and needs smoothing before it can be ranked.')
 regimeLookbackInput = input.int(100, 'Percentile Lookback', minval = 20, maxval = 1000, group = REGIME_GROUP, tooltip = 'The efficiency ratio is ranked against its own history over this many bars rather than against a fixed constant, so the same settings behave sensibly across instruments and timeframes.')
@@ -922,6 +927,21 @@ var int arrayOffset = 0
 //                                  which measures a 3-day gap on the first bar after a weekend and blew up
 //                                  every right-edge projection that multiplied it.
 var int barDurationMs = math.max(1, nz(timeframe.in_seconds(), 60)) * 1000
+
+// [W2] Wyckoff drawings live in the BOTTOM layer. Pine stacks drawings by type (boxes under lines under labels)
+//      and, within a type, by creation order: the earliest-created box is drawn underneath. So the Wyckoff range
+//      boxes and the phase text box are allocated here, on the first bar and BEFORE every other box pool below
+//      (order blocks, confirmation zones), and are then only ever reused, never re-created. Fair value gap and
+//      premium/discount boxes are created later still, so they sit above them too. The phase readout is a
+//      borderless box with text rather than a label, because any label would render above all boxes and lines.
+var array<box> wyBoxes = array.new<box>()
+var box wyPhaseTextBox = na
+if barstate.isfirst and showRegimeInput
+    if showWyRangeBoxInput
+        for index = 1 to wyMaxBoxesInput by 1
+            wyBoxes.push(box.new(na, na, na, na, xloc = xloc.bar_index, border_color = color(na), bgcolor = color(na), border_style = line.style_dotted, text_size = size.tiny, text_halign = text.align_left, text_valign = text.align_top))
+    if showRegimeLabelInput
+        wyPhaseTextBox := box.new(na, na, na, na, xloc = xloc.bar_time, border_color = color.new(color.gray, 100), border_width = 0, bgcolor = color.new(color.gray, 100), text_size = size.small, text_halign = text.align_left, text_valign = text.align_center, text_wrap = text.wrap_none)
 
 // we create the needed drawing objects at the first execution
 // [C14] a label is allocated per box slot so drawOrderBlocks() can reuse them instead of calling label.new() per tick
@@ -2413,23 +2433,29 @@ bool wyInRange = wyPhase == WY_ACCUMULATION or wyPhase == WY_DISTRIBUTION
 
 // [W1] Trading range boxes. One box per accumulation / distribution range, opened over the trailing range
 //      window (the range was already forming before the efficiency ratio could confirm it), grown with price
-//      while the range lasts, and recoloured if the phase flips inside it. Only the last N are kept.
-var array<box> wyBoxes = array.new<box>()
+//      while the range lasts, and recoloured if the phase flips inside it.
+// [W2] The boxes come from the bottom-layer pool allocated on the first bar (see [W2] near the top). A new
+//      range takes the next slot in rotation, which recycles the oldest box, so the last N ranges stay drawn.
 var box wyCurrentBox = na
+var int wyBoxSlot = -1
 var float wyBoxTop = na
 var float wyBoxBottom = na
 
-if showRegimeInput and showWyRangeBoxInput
+if showRegimeInput and showWyRangeBoxInput and wyBoxes.size() > 0
     if wyInRange
         color boxColor = regimeColor
         bool wyWasInRange = wyPreviousPhase == WY_ACCUMULATION or wyPreviousPhase == WY_DISTRIBUTION
         if not wyWasInRange or na(wyCurrentBox)
+            wyBoxSlot := (wyBoxSlot + 1) % wyBoxes.size()
+            wyCurrentBox := wyBoxes.get(wyBoxSlot)
             wyBoxTop := wyRangeHigh
             wyBoxBottom := wyRangeLow
-            wyCurrentBox := box.new(math.max(0, bar_index - wyRangeLengthInput + 1), wyBoxTop, bar_index, wyBoxBottom, xloc = xloc.bar_index, border_color = color.new(boxColor, 55), border_style = line.style_dotted, bgcolor = color.new(boxColor, 93), text = wyPhase, text_size = size.tiny, text_color = color.new(boxColor, 30), text_halign = text.align_left, text_valign = text.align_top)
-            wyBoxes.push(wyCurrentBox)
-            while wyBoxes.size() > wyMaxBoxesInput
-                box.delete(wyBoxes.shift())
+            wyCurrentBox.set_lefttop(math.max(0, bar_index - wyRangeLengthInput + 1), wyBoxTop)
+            wyCurrentBox.set_rightbottom(bar_index, wyBoxBottom)
+            wyCurrentBox.set_text(wyPhase)
+            wyCurrentBox.set_text_color(color.new(boxColor, 30))
+            wyCurrentBox.set_border_color(color.new(boxColor, 55))
+            wyCurrentBox.set_bgcolor(color.new(boxColor, 93))
         else
             wyBoxTop := math.max(wyBoxTop, high)
             wyBoxBottom := math.min(wyBoxBottom, low)
@@ -2454,17 +2480,25 @@ if showRegimeInput and showWyEventsInput and not regimeTrending
     while wyEventLabels.size() > 20
         label.delete(wyEventLabels.shift())
 
-// [K-REG] One reused label, stacked below the HTF bias label at the same right-edge offset so the two do
-//         not overlap. atrMeasure gives a spacing that scales with the instrument instead of a fixed price gap.
-// [W1] The tooltip lists the four votes, so the phase can always be traced back to its evidence.
-var label regimeLabel = label.new(na, na, xloc = xloc.bar_time, color = color(na), style = label.style_label_left, size = size.small)
+// @function            [W2] signed vote for the phase readout
+// @returns             string
+wyVote(int v) =>
+    v > 0 ? '+' + str.tostring(v) : str.tostring(v)
 
-if showRegimeInput and showRegimeLabelInput and (barstate.islast or barstate.islastconfirmedhistory)
-    string voteText = (wyInRange ? 'Score ' + str.tostring(wyScore) + ' (+ accumulation / - distribution)' : 'Trending, efficiency rank ' + str.tostring(regimeEfficiencyRank, '0')) + '\nPrior trend: ' + (wyLastTrend == 1 ? 'markup' : wyLastTrend == -1 ? 'markdown' : 'none') + ' (' + str.tostring(wyPriorVote) + ')\nLocation: ' + str.tostring(100 * wyLocation, '0') + '% of ' + str.tostring(wyLocationLengthInput) + '-bar range (' + str.tostring(wyLocationVote) + ')\nEffort: up-volume balance ' + str.tostring(100 * wyVolumeBalance, '0') + '% (' + str.tostring(wyEffortVote) + ')\nEvents: ' + (wySpringRecent ? 'spring ' + str.tostring(bar_index - wyLastSpringIndex) + ' bars ago ' : '') + (wyUpthrustRecent ? 'upthrust ' + str.tostring(bar_index - wyLastUpthrustIndex) + ' bars ago ' : '') + (not wySpringRecent and not wyUpthrustRecent ? 'none ' : '') + '(' + str.tostring(wyEventVote) + ')'
-    regimeLabel.set_point(chart.point.new(last_bar_time + 20 * barDurationMs, na, close - 1.5 * atrMeasure))
-    regimeLabel.set_text('Wyckoff: ' + regimeText)
-    regimeLabel.set_textcolor(regimeColor)
-    regimeLabel.set_tooltip(voteText)
+// [W2] Phase readout at the right edge, stacked below the HTF bias label as before. It is TEXT IN A BORDERLESS
+//      BOX from the bottom-layer pool, not a label, so order blocks, their confirmation zones, gaps and every
+//      label draw over it. Boxes carry no tooltip, so the four votes are printed on a second line instead.
+if showRegimeInput and showRegimeLabelInput and not na(wyPhaseTextBox) and not na(wyPhase) and (barstate.islast or barstate.islastconfirmedhistory)
+    // compact on purpose, the box has to hold it: P = prior trend, L = location, V = volume effort, E = event
+    string voteLine = wyInRange ? 'score ' + wyVote(wyScore) + '  (P' + wyVote(wyPriorVote) + ' L' + wyVote(wyLocationVote) + ' V' + wyVote(wyEffortVote) + ' E' + wyVote(wyEventVote) + ')' : 'trend, ER rank ' + str.tostring(regimeEfficiencyRank, '0') + '%'
+    float textY = close - 1.5 * atrMeasure
+    int textLeft = last_bar_time + 20 * barDurationMs
+    // Kept generously large so the text always fits. NOTE: the box is 100% transparent rather than na. A box
+    // whose border AND background are both na is not rendered at all, and its text disappears with it.
+    wyPhaseTextBox.set_lefttop(textLeft, textY + atrMeasure)
+    wyPhaseTextBox.set_rightbottom(textLeft + 120 * barDurationMs, textY - atrMeasure)
+    wyPhaseTextBox.set_text('Wyckoff: ' + regimeText + '\n' + voteLine)
+    wyPhaseTextBox.set_text_color(regimeColor)
 
 bgcolor(showRegimeInput and showRegimeBackgroundInput and not na(wyPhase) ? color.new(regimeColor, regimeBackgroundOpacityInput) : na, title = 'Wyckoff Phase')
 
