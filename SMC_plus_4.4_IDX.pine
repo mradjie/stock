@@ -44,10 +44,12 @@ indicator('SMC Plus v4.4 IDX', 'SMC Plus v4.4 IDX', overlay = true, max_labels_c
 //      is text in a borderless box instead of a label (labels always render above boxes and lines); since
 //      boxes have no tooltip, the four votes are printed on its second line.
 // [RS1] Relative Strength Comparison vs a benchmark (IDX:LQ45 by default): close / benchmark close, normalised
-//      to 0-100 by stochastic (default) or percentile rank over a 50-bar lookback, smoothed by 3. A diamond above
+//      to 0-100 by stochastic (default) or percentile rank over a 50-bar lookback, smoothed by 3. A small dot above
 //      the candle marks RSC above 80 (strong), below the candle RSC under 20 (weak), placed one ATR beyond the
 //      wick so it does not collide with the MFI triangles or ARA/ARB labels. Value in the Data Window, alerts
 //      for both levels. Display only.
+// [RS2] RSC markers changed from size.tiny diamonds (the smallest plotshape) to a '•' plotchar at size.tiny,
+//      70% opaque, which renders noticeably smaller and keeps long runs of markers unobtrusive.
 // ---------------------------------------------------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -618,7 +620,7 @@ mfiOversoldColorInput = input.color(GREEN, 'Oversold', group = MFI_GROUP, inline
 mfiOnlyOnEntryInput = input.bool(false, 'Only Mark Zone Entry', group = MFI_GROUP, tooltip = 'Off: every bar sitting at the extreme is marked. This is the literal reading of "MFI above 90" and the default.\n\nOn: only the first bar of each excursion is marked. Much cleaner in strong trends, where MFI can hold beyond the level for many bars and produce a solid run of triangles.')
 
 // [RS1] Relative Strength Comparison against a benchmark. Display and alerts only.
-showRscInput = input.bool(true, 'Relative Strength Comparison', group = RSC_GROUP, tooltip = 'RSC compares this stock with a benchmark: the ratio close / benchmark close. A rising ratio means the stock is outperforming the benchmark, a falling one that it is lagging, regardless of whether the market itself is up or down.\n\nThe raw ratio has no fixed scale, so it is normalised to 0-100 against its own recent history (see Normalisation), which is what makes the 80 / 20 levels meaningful on any stock.\n\nA diamond ABOVE the candle marks strong relative strength (RSC above the upper level), a diamond BELOW the candle weak relative strength (RSC below the lower level). The value itself is shown in the Data Window.')
+showRscInput = input.bool(true, 'Relative Strength Comparison', group = RSC_GROUP, tooltip = 'RSC compares this stock with a benchmark: the ratio close / benchmark close. A rising ratio means the stock is outperforming the benchmark, a falling one that it is lagging, regardless of whether the market itself is up or down.\n\nThe raw ratio has no fixed scale, so it is normalised to 0-100 against its own recent history (see Normalisation), which is what makes the 80 / 20 levels meaningful on any stock.\n\nA small dot ABOVE the candle marks strong relative strength (RSC above the upper level), a dot BELOW the candle weak relative strength (RSC below the lower level). The value itself is shown in the Data Window.')
 rscBenchmarkInput = input.symbol('IDX:LQ45', 'Benchmark', group = RSC_GROUP, tooltip = 'IDX LQ45 by default. IDX:COMPOSITE (IHSG) or a sector index also work.')
 rscMethodInput = input.string(RSC_STOCH, 'Normalisation', options = [RSC_STOCH, RSC_PERCENTILE], group = RSC_GROUP, tooltip = 'Stochastic: where the ratio sits between its lowest and highest value of the lookback. 100 = the strongest the stock has been relative to the benchmark in that window.\n\nPercentile Rank: the share of lookback bars on which the ratio was lower than now. Less sensitive to a single extreme bar.')
 rscLengthInput = input.int(50, 'Lookback', minval = 5, maxval = 500, group = RSC_GROUP, inline = 'rsclen', tooltip = '50 bars is roughly one quarter on a daily chart. Smoothing is a simple moving average of the normalised value.')
@@ -2383,15 +2385,17 @@ bool rscWeak = rscValue < rscLowerInput
 bool rscStrongSignal = showRscInput and (rscOnlyOnEntryInput ? rscStrong and not rscStrong[1] : rscStrong)
 bool rscWeakSignal = showRscInput and (rscOnlyOnEntryInput ? rscWeak and not rscWeak[1] : rscWeak)
 
-// [RS1] Diamonds, so they cannot be confused with the MFI triangles, placed at an absolute price one ATR(14)
+// [RS1] Round dots (see [RS2]), so they cannot be confused with the MFI triangles, placed at an absolute price one ATR(14)
 //       beyond the wick. location.abovebar would put them on exactly the spot the MFI triangle and the ARA/ARB
 //       labels already use, and TradingView does not stack shapes that share a location.
 // [RS1] ONE plotshape for both sides (price and colour are series), because the script sits at Pine's
 //       64-plot limit: every plot, plotshape, bgcolor and alertcondition counts towards it.
 float rscOffset = nz(ta.atr(14)) * 0.9
 float rscMarkerPrice = rscStrongSignal ? high + rscOffset : rscWeakSignal ? low - rscOffset : na
-color rscMarkerColor = rscStrongSignal ? color.new(rscStrongColorInput, 15) : color.new(rscWeakColorInput, 15)
-plotshape(rscMarkerPrice, title = 'RSC Strong / Weak', style = shape.diamond, location = location.absolute, color = rscMarkerColor, size = size.tiny)
+color rscMarkerColor = rscStrongSignal ? color.new(rscStrongColorInput, 30) : color.new(rscWeakColorInput, 30)
+// [RS2] a small bullet glyph via plotchar: size.tiny is already the smallest plotshape, and a character at
+//       size.tiny renders noticeably smaller than a shape, which keeps long runs of markers unobtrusive
+plotchar(rscMarkerPrice, title = 'RSC Strong / Weak', char = '•', location = location.absolute, color = rscMarkerColor, size = size.tiny)
 // value for the Data Window only, so no line is drawn on the price scale
 plot(showRscInput ? rscValue : na, 'RSC', color = rscStrongColorInput, display = display.data_window)
 
