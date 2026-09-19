@@ -33,7 +33,7 @@ indicator('SMC Plus v4.4 IDX', 'SMC Plus v4.4 IDX', overlay = true, max_labels_c
 //                more against it, so the label does not flicker.
 //      Display: phase label at the right edge (hover for the votes), optional background tint, faint boxes
 //      around each accumulation / distribution range (last 5 by default), optional Spring / UT markers.
-//      Alerts: phase changed, one per phase, spring, upthrust. The old "Market Regime Changed" alert is gone;
+//      Alerts: one per phase, plus one shared spring / upthrust alert. The old "Market Regime Changed" alert is gone;
 //      alerts bound to it must be recreated.
 //      STILL DISPLAY ONLY, like [K-REG]: no structure, order block, gap, sweep, filter or statistics path reads
 //      the phase. Wyckoff's finer schematic events (PS, SC, AR, ST, SOS, LPS, BC, SOW, LPSY) are not labelled;
@@ -43,6 +43,11 @@ indicator('SMC Plus v4.4 IDX', 'SMC Plus v4.4 IDX', overlay = true, max_labels_c
 //      box underneath, so order blocks, confirmation zones and gaps now sit on top of them. The phase readout
 //      is text in a borderless box instead of a label (labels always render above boxes and lines); since
 //      boxes have no tooltip, the four votes are printed on its second line.
+// [RS1] Relative Strength Comparison vs a benchmark (IDX:LQ45 by default): close / benchmark close, normalised
+//      to 0-100 by stochastic (default) or percentile rank over a 50-bar lookback, smoothed by 3. A diamond above
+//      the candle marks RSC above 80 (strong), below the candle RSC under 20 (weak), placed one ATR beyond the
+//      wick so it does not collide with the MFI triangles or ARA/ARB labels. Value in the Data Window, alerts
+//      for both levels. Display only.
 // ---------------------------------------------------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -412,6 +417,11 @@ SWEEP_GROUP = 'Liquidity Sweeps'
 HTF_GROUP = 'Higher Timeframe Bias'
 MA_GROUP = 'Moving Averages'
 MFI_GROUP = 'Money Flow Index'
+RSC_GROUP = 'Relative Strength (RSC)'
+
+// [RS1] RSC normalisation methods
+RSC_STOCH = 'Stochastic'
+RSC_PERCENTILE = 'Percentile Rank'
 REGIME_GROUP = 'Wyckoff Phase'
 STATS_GROUP = 'Signal Statistics'
 IDX_GROUP = 'Indonesia (IDX)'
@@ -606,6 +616,18 @@ mfiOversoldInput = input.float(15, 'Oversold Below', minval = 0, maxval = 50, st
 mfiOverboughtColorInput = input.color(RED, 'Overbought', group = MFI_GROUP, inline = 'mficol')
 mfiOversoldColorInput = input.color(GREEN, 'Oversold', group = MFI_GROUP, inline = 'mficol')
 mfiOnlyOnEntryInput = input.bool(false, 'Only Mark Zone Entry', group = MFI_GROUP, tooltip = 'Off: every bar sitting at the extreme is marked. This is the literal reading of "MFI above 90" and the default.\n\nOn: only the first bar of each excursion is marked. Much cleaner in strong trends, where MFI can hold beyond the level for many bars and produce a solid run of triangles.')
+
+// [RS1] Relative Strength Comparison against a benchmark. Display and alerts only.
+showRscInput = input.bool(true, 'Relative Strength Comparison', group = RSC_GROUP, tooltip = 'RSC compares this stock with a benchmark: the ratio close / benchmark close. A rising ratio means the stock is outperforming the benchmark, a falling one that it is lagging, regardless of whether the market itself is up or down.\n\nThe raw ratio has no fixed scale, so it is normalised to 0-100 against its own recent history (see Normalisation), which is what makes the 80 / 20 levels meaningful on any stock.\n\nA diamond ABOVE the candle marks strong relative strength (RSC above the upper level), a diamond BELOW the candle weak relative strength (RSC below the lower level). The value itself is shown in the Data Window.')
+rscBenchmarkInput = input.symbol('IDX:LQ45', 'Benchmark', group = RSC_GROUP, tooltip = 'IDX LQ45 by default. IDX:COMPOSITE (IHSG) or a sector index also work.')
+rscMethodInput = input.string(RSC_STOCH, 'Normalisation', options = [RSC_STOCH, RSC_PERCENTILE], group = RSC_GROUP, tooltip = 'Stochastic: where the ratio sits between its lowest and highest value of the lookback. 100 = the strongest the stock has been relative to the benchmark in that window.\n\nPercentile Rank: the share of lookback bars on which the ratio was lower than now. Less sensitive to a single extreme bar.')
+rscLengthInput = input.int(50, 'Lookback', minval = 5, maxval = 500, group = RSC_GROUP, inline = 'rsclen', tooltip = '50 bars is roughly one quarter on a daily chart. Smoothing is a simple moving average of the normalised value.')
+rscSmoothInput = input.int(3, 'Smoothing', minval = 1, maxval = 20, group = RSC_GROUP, inline = 'rsclen')
+rscUpperInput = input.float(80, 'Strong Above', minval = 50, maxval = 100, step = 1, group = RSC_GROUP, inline = 'rsclvl')
+rscLowerInput = input.float(20, 'Weak Below', minval = 0, maxval = 50, step = 1, group = RSC_GROUP, inline = 'rsclvl')
+rscStrongColorInput = input.color(#2962ff, 'Strong', group = RSC_GROUP, inline = 'rsccol')
+rscWeakColorInput = input.color(#ff6d00, 'Weak', group = RSC_GROUP, inline = 'rsccol')
+rscOnlyOnEntryInput = input.bool(false, 'Only Mark Zone Entry', group = RSC_GROUP, tooltip = 'Off: every bar beyond the level is marked, the literal reading of "RSC above 80".\n\nOn: only the first bar of each excursion. Relative strength tends to persist for weeks, so this is much tidier on a trending stock.')
 
 // [W1] Wyckoff phase. Display and alerts only: nothing in the signal path reads it.
 showRegimeInput = input.bool(true, 'Wyckoff Phase Detection', group = REGIME_GROUP, tooltip = 'Classifies the market into the four Wyckoff phases.\n\nStep 1, trend or trading range: Kaufman\'s efficiency ratio, ranked against its own history with hysteresis. Trending + rising = MARKUP, trending + falling = MARKDOWN.\n\nStep 2, which kind of trading range: four votes, +1 for accumulation or -1 for distribution:\n- Prior trend: a range after a markdown leans accumulation, after a markup distribution\n- Location: lower part of the long-term range leans accumulation, upper part distribution\n- Effort (volume): more volume on up-closes than down-closes leans accumulation\n- Events: a recent SPRING (dip below the range low that closes back inside) leans accumulation, an UPTHRUST distribution\n\nThe sum picks the phase when a range starts. Inside a range the label only switches when the evidence clearly turns (score of 2 or more against it), so it does not flicker.\n\nContext only: it does not filter, dim or suppress any signal. The phase readout at the right edge prints the score and the four votes behind it: P prior trend, L location, V volume effort, E spring/upthrust event.')
@@ -2343,6 +2365,37 @@ plotshape(mfiOverboughtSignal and not (showLimitBarsInput and araTouched), title
 plotshape(mfiOversoldSignal and not (showLimitBarsInput and arbTouched), title = 'MFI Oversold', style = shape.triangleup, location = location.belowbar, color = mfiOversoldColorInput, size = size.tiny)
 
 //---------------------------------------------------------------------------------------------------------------------}
+//RELATIVE STRENGTH COMPARISON
+//---------------------------------------------------------------------------------------------------------------------{
+// [RS1] Ratio of this symbol to a benchmark (IDX:LQ45 by default), normalised to 0-100 against its own lookback.
+//       Same timeframe as the chart and lookahead_off, so it cannot see the future. Bars where the benchmark has
+//       no data (a stock trading on a day the index did not print, or before the index existed) yield na and
+//       simply draw nothing. Display, Data Window and alerts only: no signal path reads it.
+float rscBenchmarkClose = request.security(rscBenchmarkInput, timeframe.period, close, lookahead = barmerge.lookahead_off)
+float rscRatio = rscBenchmarkClose > 0 ? close / rscBenchmarkClose : na
+float rscStochRaw = ta.stoch(rscRatio, rscRatio, rscRatio, rscLengthInput)
+float rscPercentileRaw = ta.percentrank(rscRatio, rscLengthInput)
+// both computed on every bar, then selected: ta.* calls inside a ternary trigger a consistency warning
+float rscValue = ta.sma(rscMethodInput == RSC_STOCH ? rscStochRaw : rscPercentileRaw, rscSmoothInput)
+
+bool rscStrong = rscValue > rscUpperInput
+bool rscWeak = rscValue < rscLowerInput
+bool rscStrongSignal = showRscInput and (rscOnlyOnEntryInput ? rscStrong and not rscStrong[1] : rscStrong)
+bool rscWeakSignal = showRscInput and (rscOnlyOnEntryInput ? rscWeak and not rscWeak[1] : rscWeak)
+
+// [RS1] Diamonds, so they cannot be confused with the MFI triangles, placed at an absolute price one ATR(14)
+//       beyond the wick. location.abovebar would put them on exactly the spot the MFI triangle and the ARA/ARB
+//       labels already use, and TradingView does not stack shapes that share a location.
+// [RS1] ONE plotshape for both sides (price and colour are series), because the script sits at Pine's
+//       64-plot limit: every plot, plotshape, bgcolor and alertcondition counts towards it.
+float rscOffset = nz(ta.atr(14)) * 0.9
+float rscMarkerPrice = rscStrongSignal ? high + rscOffset : rscWeakSignal ? low - rscOffset : na
+color rscMarkerColor = rscStrongSignal ? color.new(rscStrongColorInput, 15) : color.new(rscWeakColorInput, 15)
+plotshape(rscMarkerPrice, title = 'RSC Strong / Weak', style = shape.diamond, location = location.absolute, color = rscMarkerColor, size = size.tiny)
+// value for the Data Window only, so no line is drawn on the price scale
+plot(showRscInput ? rscValue : na, 'RSC', color = rscStrongColorInput, display = display.data_window)
+
+//---------------------------------------------------------------------------------------------------------------------}
 //WYCKOFF PHASE
 //---------------------------------------------------------------------------------------------------------------------{
 // [W1] Two steps. Everything is on the chart timeframe and uses confirmed history only, so there is no
@@ -2500,7 +2553,7 @@ if showRegimeInput and showRegimeLabelInput and not na(wyPhaseTextBox) and not n
     wyPhaseTextBox.set_text('Wyckoff: ' + regimeText + '\n' + voteLine)
     wyPhaseTextBox.set_text_color(regimeColor)
 
-bgcolor(showRegimeInput and showRegimeBackgroundInput and not na(wyPhase) ? color.new(regimeColor, regimeBackgroundOpacityInput) : na, title = 'Wyckoff Phase')
+// [RS1] the Wyckoff tint is drawn by the single background call in IDX SESSION WINDOWS below (64-plot limit)
 
 
 //---------------------------------------------------------------------------------------------------------------------}
@@ -2515,7 +2568,9 @@ bool inIdxSession2 = not na(time(timeframe.period, idxSession2InputMonThu + ':23
 bool inIdxPreClosing = not na(time(timeframe.period, idxCloseSessionInput + ':23456', IDX_TZ))
 
 color idxSessionColor = not idxShowSessions ? color(na) : inIdxOpening ? idxOpenColorInput : inIdxSession2 ? idxSession2ColorInput : inIdxPreClosing ? idxCloseColorInput : color(na)
-bgcolor(idxSessionColor, title = 'IDX Sessions')
+// [RS1] one bgcolor for both tints to stay under the 64-plot limit. An intraday session window takes priority over the Wyckoff phase tint.
+color wyTintColor = showRegimeInput and showRegimeBackgroundInput and not na(wyPhase) ? color.new(regimeColor, regimeBackgroundOpacityInput) : color(na)
+bgcolor(not na(idxSessionColor) ? idxSessionColor : wyTintColor, title = 'Sessions / Wyckoff Tint')
 
 //---------------------------------------------------------------------------------------------------------------------}
 //SIGNAL STATISTICS
@@ -2859,14 +2914,17 @@ alertcondition(currentAlerts.bearishIFVG, 'Bearish IFVG', 'Bullish FVG inverted 
 alertcondition(mfiOverboughtSignal, 'MFI Overbought', 'Money Flow Index reached the overbought level')
 alertcondition(mfiOversoldSignal, 'MFI Oversold', 'Money Flow Index reached the oversold level')
 
-// [W1] alertcondition messages cannot be dynamic, so there is one alert per phase besides the generic one
-alertcondition(regimeChanged, 'Wyckoff Phase Changed', 'Wyckoff phase changed, see the phase label')
+// [RS1] these follow the same "Only Mark Zone Entry" setting as the RSC diamonds
+alertcondition(rscStrongSignal, 'RSC Strong', 'Relative strength vs the benchmark is above the strong level')
+alertcondition(rscWeakSignal, 'RSC Weak', 'Relative strength vs the benchmark is below the weak level')
+
+// [W1] alertcondition messages cannot be dynamic, so there is one alert per phase (no generic "changed" alert: the script is at the 64-plot limit)
 alertcondition(wyEnteredAccumulation, 'Wyckoff Accumulation', 'Price entered a Wyckoff accumulation range')
 alertcondition(wyEnteredMarkup, 'Wyckoff Markup', 'Wyckoff markup phase started')
 alertcondition(wyEnteredDistribution, 'Wyckoff Distribution', 'Price entered a Wyckoff distribution range')
 alertcondition(wyEnteredMarkdown, 'Wyckoff Markdown', 'Wyckoff markdown phase started')
-alertcondition(showRegimeInput and wySpring and not regimeTrending, 'Wyckoff Spring', 'Spring: pierced the trading range low and closed back inside')
-alertcondition(showRegimeInput and wyUpthrust and not regimeTrending, 'Wyckoff Upthrust', 'Upthrust: pierced the trading range high and closed back inside')
+// [RS1] spring and upthrust share one alert (64-plot limit); the chart markers tell them apart
+alertcondition(showRegimeInput and (wySpring or wyUpthrust) and not regimeTrending, 'Wyckoff Spring / Upthrust', 'Spring or upthrust: price pierced the trading range edge and closed back inside')
 
 // [F24] the sweep alerts are context, the reversal alerts are the actual setup
 alertcondition(currentAlerts.buysideLiquiditySweep, 'Buyside Liquidity Sweep', 'Buyside liquidity swept above equal highs')
