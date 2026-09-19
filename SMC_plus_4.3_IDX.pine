@@ -2083,7 +2083,10 @@ drawPremiumDiscountZones() =>
 // @function            [H-MA] pick a simple or exponential average
 // @returns             float
 movingAverage(float src, int len, string maType) =>
-    maType == MA_SMA ? ta.sma(src, len) : ta.ema(src, len)
+    // both computed on every bar: ta.* calls inside a ternary trigger a consistency warning
+    float smaValue = ta.sma(src, len)
+    float emaValue = ta.ema(src, len)
+    maType == MA_SMA ? smaValue : emaValue
 
 // @function            [H-MA] Kaufman's Adaptive Moving Average
 // @param src           price series
