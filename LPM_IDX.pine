@@ -1,0 +1,151 @@
+// Liquidity Pressure Model (LPM) - reconstruction for the Indonesia Stock Exchange
+//
+// WHAT THIS IS, AND WHAT IT IS NOT
+// The original LPM is a proprietary Bandar Metrics tool. Its exact formula is not published, and the broker
+// summary data (which broker bought or sold, and at what average price) that a "bandar tracker" really needs is
+// NOT available to Pine Script: TradingView only provides OHLCV. This script therefore RECONSTRUCTS the model
+// from what the published charts show, using price action inside each bar to weight that bar's volume:
+//   - a cumulative line that rises while buyers absorb supply and falls while sellers distribute (LPM),
+//   - a slow average-cost line, the volume weighted average price of everything traded since the anchor
+//     (AvgCost), which the original chart pairs with it.
+// Read it as a DIRECTION and a CONTEXT, exactly as the original describes it: rising = accumulation,
+// falling = distribution, flat = nobody is pressing. It cannot tell you how many lots anyone holds.
+//
+// HONEST LIMITS
+//   - No broker data, so this is an inference from OHLCV, not a measurement of any single participant.
+//   - IDX volume is regular-market volume. Crossing / negotiated trades are not in it, so a large block done
+//     off the regular market is invisible here.
+//   - The cumulative line depends on where the chart's history starts. Two charts with different loaded
+//     history will show different absolute values; only the SHAPE is meaningful.
+//   - Every market-profile style proxy fails on illiquid stocks: with a handful of trades a day, one order
+//     moves the line. Check the average value traded before trusting it.
+
+//@version=6
+indicator('Liquidity Pressure Model (LPM)', 'LPM', overlay = false, precision = 0)
+
+// ---------------------------------------------------------------------------------------------------------------------
+// INPUTS
+// ---------------------------------------------------------------------------------------------------------------------
+LPM_GROUP = 'Liquidity Pressure Model'
+COST_GROUP = 'Average Cost'
+OVERLAY_GROUP = 'Price Pane Overlay'
+STATE_GROUP = 'State Readout'
+
+METHOD_CLV = 'Accumulation / Distribution (CLV)'
+METHOD_OBV = 'On Balance Volume'
+METHOD_BODY = 'Candle Body'
+METHOD_MONEY = 'Money Flow (value)'
+
+ANCHOR_ALL = 'All History'
+ANCHOR_ROLLING = 'Rolling Window'
+
+lpmMethodInput = input.string(METHOD_CLV, 'Pressure Source', options = [METHOD_CLV, METHOD_OBV, METHOD_BODY, METHOD_MONEY], group = LPM_GROUP, tooltip = 'How each bar\'s volume is signed before it is accumulated.\n\nCLV (default): where the close sits inside the bar\'s range, from +1 (close at the high, buyers absorbed everything) to -1 (close at the low). Partial credit for a close in the middle, so a wide indecisive bar counts for little. This is the Accumulation/Distribution reading and behaves closest to the published LPM.\n\nOn Balance Volume: the whole bar\'s volume counts, signed by the close-to-close change. Cruder, and a 1-tick change counts as much as a limit-up.\n\nCandle Body: signed by the body as a share of the range, ignoring where the bar closed relative to the previous one.\n\nMoney Flow (value): like OBV but in rupiah (typical price x volume), so expensive bars weigh more. Values get very large.')
+lpmAnchorInput = input.string(ANCHOR_ALL, 'Anchor', options = [ANCHOR_ALL, ANCHOR_ROLLING], group = LPM_GROUP, inline = 'anchor', tooltip = 'All History: one cumulative line from the first loaded bar, like the published chart. The absolute value then depends on how much history the chart has loaded; only its shape and slope mean anything.\n\nRolling Window: the sum over the last N bars instead. This drops the history dependence and makes the line comparable across symbols, at the cost of the long accumulation picture.')
+lpmRollingInput = input.int(250, '', minval = 10, maxval = 5000, group = LPM_GROUP, inline = 'anchor')
+lpmSmoothInput = input.int(3, 'Smoothing', minval = 1, maxval = 100, group = LPM_GROUP, tooltip = 'EMA applied to the cumulative line. 1 disables it.')
+lpmColorInput = input.color(#29b6f6, 'LPM', group = LPM_GROUP, inline = 'lpmcol')
+lpmSlopeColorInput = input.bool(false, 'Colour by slope', group = LPM_GROUP, inline = 'lpmcol', tooltip = 'Off: one colour, as in the published chart.\n\nOn: green while the line is rising (accumulation), red while falling (distribution), grey while flat.')
+lpmUpColorInput = input.color(#26a69a, 'Up', group = LPM_GROUP, inline = 'lpmcol2')
+lpmDownColorInput = input.color(#ef5350, 'Down', group = LPM_GROUP, inline = 'lpmcol2')
+lpmFlatColorInput = input.color(#9598a1, 'Flat', group = LPM_GROUP, inline = 'lpmcol2')
+
+showAvgCostInput = input.bool(true, 'Show Average Cost', group = COST_GROUP, tooltip = 'Volume weighted average price of everything traded since the anchor, drawn on the PRICE pane. It is the market\'s average cost, not any one participant\'s.\n\nPrice above it: the average holder is in profit. Price crossing below it after a long climb is the classic distribution warning the LPM chart pairs with a falling LPM line.')
+avgCostAnchorInput = input.string(ANCHOR_ALL, 'Anchor', options = [ANCHOR_ALL, ANCHOR_ROLLING], group = COST_GROUP, inline = 'costanchor')
+avgCostRollingInput = input.int(250, '', minval = 10, maxval = 5000, group = COST_GROUP, inline = 'costanchor')
+avgCostColorInput = input.color(#ff7043, 'Average Cost', group = COST_GROUP)
+
+showOverlayInput = input.bool(false, 'Draw LPM on the price pane', group = OVERLAY_GROUP, tooltip = 'The published chart shows LPM over the candles. LPM is a volume total, not a price, so it can only share that pane if it is rescaled: the line is mapped onto the high/low range of the last N bars.\n\nThe SHAPE is then the same as in the LPM pane, but the level means nothing in rupiah. Read the real value in the LPM pane or the Data Window.')
+overlayLookbackInput = input.int(250, 'Rescale Lookback', minval = 20, maxval = 2000, group = OVERLAY_GROUP)
+
+showStateInput = input.bool(true, 'Show State Label', group = STATE_GROUP, tooltip = 'Akumulasi / Distribusi / Netral, from the slope of the LPM line over the lookback below, with a dead band so it does not flicker.')
+stateLookbackInput = input.int(10, 'Slope Lookback', minval = 2, maxval = 200, group = STATE_GROUP)
+stateDeadbandInput = input.float(0.25, 'Dead Band', minval = 0, maxval = 3, step = 0.05, group = STATE_GROUP, tooltip = 'How large the slope must be, as a multiple of its own standard deviation, before the state leaves Netral. 0 makes every wiggle a state.')
+
+// ---------------------------------------------------------------------------------------------------------------------
+// PRESSURE PER BAR
+// ---------------------------------------------------------------------------------------------------------------------
+// A symbol with no volume data yields 0 here rather than na, so the cumulative line stays flat instead of
+// disappearing. Check the Data Window if the line never moves: the symbol probably has no volume.
+float barVolume = nz(volume)
+float barRange = high - low
+float closeLocation = barRange > 0 ? ((close - low) - (high - close)) / barRange : 0.0
+float bodyShare = barRange > 0 ? (close - open) / barRange : 0.0
+float closeDirection = math.sign(nz(ta.change(close)))
+
+float pressure = switch lpmMethodInput
+    METHOD_CLV => closeLocation * barVolume
+    METHOD_OBV => closeDirection * barVolume
+    METHOD_BODY => bodyShare * barVolume
+    => closeDirection * barVolume * hlc3
+
+// ---------------------------------------------------------------------------------------------------------------------
+// THE LINE
+// ---------------------------------------------------------------------------------------------------------------------
+var float lpmCumulative = 0.0
+lpmCumulative += pressure
+
+float lpmRaw = lpmAnchorInput == ANCHOR_ALL ? lpmCumulative : math.sum(pressure, lpmRollingInput)
+float lpm = lpmSmoothInput > 1 ? ta.ema(lpmRaw, lpmSmoothInput) : lpmRaw
+
+// slope and its own dispersion, so the dead band scales with the instrument instead of a magic number
+float lpmSlope = nz(ta.change(lpm, stateLookbackInput))
+float lpmSlopeDispersion = nz(ta.stdev(lpmSlope, 100))
+float stateThreshold = lpmSlopeDispersion * stateDeadbandInput
+
+bool lpmRising = lpmSlope > stateThreshold
+bool lpmFalling = lpmSlope < -stateThreshold
+string lpmState = lpmRising ? 'Akumulasi' : lpmFalling ? 'Distribusi' : 'Netral'
+color lpmStateColor = lpmRising ? lpmUpColorInput : lpmFalling ? lpmDownColorInput : lpmFlatColorInput
+color lpmPlotColor = lpmSlopeColorInput ? lpmStateColor : lpmColorInput
+
+plot(lpm, 'LPM', color = lpmPlotColor, linewidth = 2)
+hline(0, 'Zero', color = color.new(#9598a1, 70), linestyle = hline.style_dotted)
+
+// ---------------------------------------------------------------------------------------------------------------------
+// AVERAGE COST, on the price pane
+// ---------------------------------------------------------------------------------------------------------------------
+var float cumulativeValue = 0.0
+var float cumulativeVolume = 0.0
+cumulativeValue += hlc3 * barVolume
+cumulativeVolume += barVolume
+
+float rollingValue = math.sum(hlc3 * barVolume, avgCostRollingInput)
+float rollingVolume = math.sum(barVolume, avgCostRollingInput)
+
+float avgCostAll = cumulativeVolume > 0 ? cumulativeValue / cumulativeVolume : na
+float avgCostRolling = rollingVolume > 0 ? rollingValue / rollingVolume : na
+float avgCost = avgCostAnchorInput == ANCHOR_ALL ? avgCostAll : avgCostRolling
+
+plot(showAvgCostInput ? avgCost : na, 'Average Cost', color = avgCostColorInput, linewidth = 2, force_overlay = true)
+
+// ---------------------------------------------------------------------------------------------------------------------
+// OPTIONAL: THE SAME LINE OVER THE CANDLES
+// ---------------------------------------------------------------------------------------------------------------------
+// Rescaled onto the recent price range. Shape only: the level is not a price.
+float priceHigh = ta.highest(high, overlayLookbackInput)
+float priceLow = ta.lowest(low, overlayLookbackInput)
+float lpmHigh = ta.highest(lpm, overlayLookbackInput)
+float lpmLow = ta.lowest(lpm, overlayLookbackInput)
+float lpmScaled = lpmHigh > lpmLow ? priceLow + (lpm - lpmLow) / (lpmHigh - lpmLow) * (priceHigh - priceLow) : na
+
+plot(showOverlayInput ? lpmScaled : na, 'LPM (rescaled)', color = lpmPlotColor, linewidth = 2, force_overlay = true)
+
+// ---------------------------------------------------------------------------------------------------------------------
+// STATE READOUT
+// ---------------------------------------------------------------------------------------------------------------------
+var label stateLabel = label.new(na, na, xloc = xloc.bar_time, color = color(na), style = label.style_label_left, size = size.small)
+
+if showStateInput and (barstate.islast or barstate.islastconfirmedhistory)
+    string costText = na(avgCost) ? '' : '\nAvgCost ' + str.tostring(avgCost, format.mintick) + (close > avgCost ? ' (price above)' : ' (price below)')
+    stateLabel.set_point(chart.point.new(last_bar_time, na, lpm))
+    stateLabel.set_text(lpmState + costText)
+    stateLabel.set_textcolor(lpmStateColor)
+    stateLabel.set_tooltip('LPM ' + str.tostring(lpm, '#.##') + '\nSlope over ' + str.tostring(stateLookbackInput) + ' bars: ' + str.tostring(lpmSlope, '#.##') + '\nDead band: ' + str.tostring(stateThreshold, '#.##'))
+
+// ---------------------------------------------------------------------------------------------------------------------
+// ALERTS
+// ---------------------------------------------------------------------------------------------------------------------
+alertcondition(lpmRising and not lpmRising[1], 'LPM Turned Up (Akumulasi)', 'LPM turned up: accumulation pressure')
+alertcondition(lpmFalling and not lpmFalling[1], 'LPM Turned Down (Distribusi)', 'LPM turned down: distribution pressure')
+alertcondition(ta.crossover(close, avgCost), 'Price Crossed Above Average Cost', 'Price closed above the average cost line')
+alertcondition(ta.crossunder(close, avgCost), 'Price Crossed Below Average Cost', 'Price closed below the average cost line')
