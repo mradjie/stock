@@ -72,6 +72,9 @@ indicator('SMC Plus v4.3 IDX', 'SMC Plus v4.3 IDX', overlay = true, max_labels_c
 // [L1] BUG FIX, found testing on IDX:GOTO: a stock parked at the Rp 50 floor was flagged ARB on every bar,
 //      because the floor-clamped ARB level equalled the previous close. ARB now requires the limit to sit
 //      below the previous close.
+// [L2] ARA/ARB markers rebuilt for readability: size.tiny faded labels (plotshape text cannot be resized),
+//      one label per streak ("ARB×3"), merged into a sweep label on the same bar and side, MFI triangle
+//      suppressed on that side of a marked bar, and only the last N markers kept (input, default 30).
 // ---------------------------------------------------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -615,7 +618,9 @@ statsSellFeeInput = input.float(0.25, 'Sell Fee %', minval = 0.0, maxval = 2.0, 
 idxModeInput = input.string(IDX_ON, 'IDX Mode', options = [IDX_AUTO, IDX_ON, IDX_OFF], group = IDX_GROUP, tooltip = 'Enables the IDX tick size (fraksi harga) and ARA/ARB logic.\n\nAuto: on when the symbol prefix is IDX.')
 eqhMinTicksInput = input.int(2, 'EQH/EQL Min Tolerance (ticks)', minval = 0, maxval = 20, group = IDX_GROUP, tooltip = 'Equal highs/lows tolerance becomes max(Threshold x ATR, this many ticks). On a Rp 50-500 stock 0.1 x ATR is often smaller than a single tick, which made EQH/EQL require an exact match.')
 fvgMinTicksInput = input.int(2, 'FVG Min Width (ticks)', minval = 0, maxval = 20, group = IDX_GROUP, tooltip = 'Fair value gaps narrower than this many ticks are ignored. A one-tick gap on IDX is an artefact of the price grid, not an imbalance.')
-showLimitBarsInput = input.bool(true, 'Mark ARA / ARB Bars', group = IDX_GROUP, tooltip = 'Marks bars that reached the auto rejection limit, measured against the previous daily close. Intraday and daily charts only.\n\nThe limit price is rounded to the tick grid, so treat the mark as an approximation. Acceleration board and watch-list (FCA) stocks use different limits and are not modelled.')
+showLimitBarsInput = input.bool(true, 'Mark ARA / ARB Bars', group = IDX_GROUP, inline = 'limmark', tooltip = 'Marks bars that reached the auto rejection limit, measured against the previous daily close. Intraday and daily charts only.\n\nOne small label per streak: consecutive limit days read "ARB×3". Hover a label for the limit price. On a marked bar the MFI triangle on that side is not drawn, so the two never overlap.\n\nThe limit price is rounded to the tick grid, so treat the mark as an approximation. Acceleration board and watch-list (FCA) stocks use different limits and are not modelled.')
+// [L2] bounded so limit markers cannot crowd structure labels out of the 500-label budget
+maxLimitLabelsInput = input.int(30, 'Keep last', minval = 1, maxval = 200, group = IDX_GROUP, inline = 'limmark')
 excludeLimitBarsInput = input.bool(true, 'Exclude Limit-Locked Bars', group = IDX_GROUP, tooltip = 'A bar that CLOSES at ARA or ARB has no two-sided liquidity. It is skipped when choosing the order block candle, and it cannot pierce or confirm a liquidity sweep.')
 araTier1Input = input.float(35, 'ARA % (Rp 50-200)', minval = 1, maxval = 100, group = IDX_GROUP, inline = 'ara')
 araTier2Input = input.float(25, '(200-5000)', minval = 1, maxval = 100, group = IDX_GROUP, inline = 'ara')
@@ -969,8 +974,7 @@ bool arbLocked = arbTouched and close <= arbLevel
 // @variable            [IDX2] true when this bar must be kept out of OB selection and sweep detection
 bool limitLockedBar = excludeLimitBarsInput and (araLocked or arbLocked)
 
-plotshape(showLimitBarsInput and araTouched, 'ARA', shape.labeldown, location.abovebar, color.new(araColorInput, 100), text = 'ARA', textcolor = araColorInput, size = size.tiny)
-plotshape(showLimitBarsInput and arbTouched, 'ARB', shape.labelup, location.belowbar, color.new(arbColorInput, 100), text = 'ARB', textcolor = arbColorInput, size = size.tiny)
+// [L2] ARA/ARB markers are drawn as small labels further down, after the sweep update, see IDX LIMIT MARKERS
 
 // @variable            [IDX1] EQH/EQL tolerance in price, floored at N ticks on IDX. `nz` keeps it a number on
 //                      the first few bars, where even the ATR(14) fallback is still na.
@@ -2162,6 +2166,55 @@ if showLiquiditySweepsInput
 if showLiquiditySweepsInput
     updateLiquiditySweeps()
 
+// [L2] IDX LIMIT MARKERS. Tidy by construction:
+//      - label.new at size.tiny, which is smaller than plotshape text (whose font size cannot be set), faded
+//      - yloc.abovebar / belowbar, so the marker sits clear of the candle at any zoom
+//      - ONE label per streak: consecutive limit days update the first label to "ARB×3" instead of printing
+//        "ARBARBARB" side by side
+//      - on a bar where a sweep label already sits on the same side, the limit tag is appended to it
+//        ("SSL · ARB") instead of drawing a second label on top of it
+//      - on bars carrying a limit marker, the MFI triangle on that side is not drawn (see [J-MFI]); a limit day
+//        is a money-flow extreme by definition, so nothing is lost
+//      - only the most recent N markers are kept, so they cannot eat the 500-label budget that structure
+//        labels depend on
+var array<label> limitLabels = array.new<label>()
+var label araRunLabel = na
+var label arbRunLabel = na
+var int araRun = 0
+var int arbRun = 0
+
+if showLimitBarsInput
+    if araTouched
+        if araTouched[1] and not na(araRunLabel)
+            araRun += 1
+            araRunLabel.set_text('ARA×' + str.tostring(araRun))
+            araRunLabel.set_tooltip('ARA on ' + str.tostring(araRun) + ' consecutive bars')
+        else
+            araRun := 1
+            araRunLabel := na
+            if sweeps.buysideLabelIndex == bar_index and not na(sweeps.buysideLabel)
+                sweeps.buysideLabel.set_text(sweeps.buysideLabel.get_text() + ' · ARA')
+            else
+                araRunLabel := label.new(bar_index, high, 'ARA', xloc.bar_index, yloc.abovebar, color(na), label.style_label_down, color.new(araColorInput, 25), size.tiny, tooltip = 'Upper auto rejection limit reached (ARA ' + str.tostring(araLevel, format.mintick) + ')')
+                limitLabels.push(araRunLabel)
+
+    if arbTouched
+        if arbTouched[1] and not na(arbRunLabel)
+            arbRun += 1
+            arbRunLabel.set_text('ARB×' + str.tostring(arbRun))
+            arbRunLabel.set_tooltip('ARB on ' + str.tostring(arbRun) + ' consecutive bars')
+        else
+            arbRun := 1
+            arbRunLabel := na
+            if sweeps.sellsideLabelIndex == bar_index and not na(sweeps.sellsideLabel)
+                sweeps.sellsideLabel.set_text(sweeps.sellsideLabel.get_text() + ' · ARB')
+            else
+                arbRunLabel := label.new(bar_index, low, 'ARB', xloc.bar_index, yloc.belowbar, color(na), label.style_label_up, color.new(arbColorInput, 25), size.tiny, tooltip = 'Lower auto rejection limit reached (ARB ' + str.tostring(arbLevel, format.mintick) + ')')
+                limitLabels.push(arbRunLabel)
+
+    while limitLabels.size() > maxLimitLabelsInput
+        label.delete(limitLabels.shift())
+
 if showInternalsInput or showInternalOrderBlocksInput or showTrendInput
     displayStructure(true)
 
@@ -2239,8 +2292,9 @@ bool mfiOversold = mfiValue < mfiOversoldInput
 bool mfiOverboughtSignal = showMfiSignalsInput and (mfiOnlyOnEntryInput ? mfiOverbought and not mfiOverbought[1] : mfiOverbought)
 bool mfiOversoldSignal = showMfiSignalsInput and (mfiOnlyOnEntryInput ? mfiOversold and not mfiOversold[1] : mfiOversold)
 
-plotshape(mfiOverboughtSignal, title = 'MFI Overbought', style = shape.triangledown, location = location.abovebar, color = mfiOverboughtColorInput, size = size.tiny)
-plotshape(mfiOversoldSignal, title = 'MFI Oversold', style = shape.triangleup, location = location.belowbar, color = mfiOversoldColorInput, size = size.tiny)
+// [L2] not drawn where an ARA/ARB marker occupies the same side of the bar; the alerts below are unaffected
+plotshape(mfiOverboughtSignal and not (showLimitBarsInput and araTouched), title = 'MFI Overbought', style = shape.triangledown, location = location.abovebar, color = mfiOverboughtColorInput, size = size.tiny)
+plotshape(mfiOversoldSignal and not (showLimitBarsInput and arbTouched), title = 'MFI Oversold', style = shape.triangleup, location = location.belowbar, color = mfiOversoldColorInput, size = size.tiny)
 
 //---------------------------------------------------------------------------------------------------------------------}
 //MARKET REGIME
