@@ -49,7 +49,8 @@ indicator('SMC Plus v4.4 IDX', 'SMC Plus v4.4 IDX', overlay = true, max_labels_c
 //      wick so it does not collide with the MFI triangles or ARA/ARB labels. Value in the Data Window, alerts
 //      for both levels. Display only.
 // [RS2] RSC markers changed from size.tiny diamonds (the smallest plotshape) to a '•' plotchar at size.tiny,
-//      70% opaque, which renders noticeably smaller and keeps long runs of markers unobtrusive.
+//      70% opaque, which renders noticeably smaller and keeps long runs of markers unobtrusive. The MFI
+//      triangles get the same treatment: '▾' / '▴' plotchar glyphs at size.tiny, 70% opaque.
 // ---------------------------------------------------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -2363,8 +2364,10 @@ bool mfiOverboughtSignal = showMfiSignalsInput and (mfiOnlyOnEntryInput ? mfiOve
 bool mfiOversoldSignal = showMfiSignalsInput and (mfiOnlyOnEntryInput ? mfiOversold and not mfiOversold[1] : mfiOversold)
 
 // [L2] not drawn where an ARA/ARB marker occupies the same side of the bar; the alerts below are unaffected
-plotshape(mfiOverboughtSignal and not (showLimitBarsInput and araTouched), title = 'MFI Overbought', style = shape.triangledown, location = location.abovebar, color = mfiOverboughtColorInput, size = size.tiny)
-plotshape(mfiOversoldSignal and not (showLimitBarsInput and arbTouched), title = 'MFI Oversold', style = shape.triangleup, location = location.belowbar, color = mfiOversoldColorInput, size = size.tiny)
+// [RS2] small triangle glyphs via plotchar, same treatment as the RSC dots: a character at size.tiny renders
+//       smaller than the smallest plotshape. Still triangles, so they stay distinct from the round RSC dots.
+plotchar(mfiOverboughtSignal and not (showLimitBarsInput and araTouched), title = 'MFI Overbought', char = '▾', location = location.abovebar, color = color.new(mfiOverboughtColorInput, 30), size = size.tiny)
+plotchar(mfiOversoldSignal and not (showLimitBarsInput and arbTouched), title = 'MFI Oversold', char = '▴', location = location.belowbar, color = color.new(mfiOversoldColorInput, 30), size = size.tiny)
 
 //---------------------------------------------------------------------------------------------------------------------}
 //RELATIVE STRENGTH COMPARISON
