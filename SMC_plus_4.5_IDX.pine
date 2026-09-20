@@ -29,12 +29,11 @@
 // [T2] Order block status is now TEXT INSIDE THE BOX (right-aligned, tucked against the far edge) instead of a
 //      floating label. The pooled status labels are gone, which removes one drawing per block and frees the
 //      500-label budget for structure labels.
-// [T3] RSC is drawn as a CURVE by default: an EMA of the typical price, coloured by the RSC zone (strong /
-//      weak / neutral). Relative strength lasts for weeks, so a run of per-bar dots repeated the same message.
-//      The dots are still available ("Also Show Dot Markers", default off).
-//      ONE MARKER PER SIDE PER BAR: MFI and the RSC dots now share a single plot per side with MFI first, so
-//      markers never stack. That also keeps the script inside Pine's 64-plot limit with the curve added.
-//      The glyph is fixed per plot, so an RSC dot shown through that slot appears as a triangle in RSC colours.
+// [T3] RSC is drawn as a ZONE CURVE instead of a run of per-bar dots: thin dots (style_circles) that appear
+//      ONLY while RSC is at an extreme, and take a side to say which one - above the highs while the stock
+//      outperforms the benchmark, below the lows while it lags, nothing in between. It follows the shape of
+//      the candles (EMA of the highs / lows, offset by 0.6 ATR) and never crosses them. The per-bar RSC dot
+//      markers are removed; MFI keeps the marker slots to itself, one per side per bar.
 // [T4] DEFAULT CHANGED: Wyckoff Phase Detection is now OFF.
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -673,12 +672,11 @@ rscUpperInput = input.float(80, 'Strong Above', minval = 50, maxval = 100, step 
 rscLowerInput = input.float(20, 'Weak Below', minval = 0, maxval = 50, step = 1, group = RSC_GROUP, inline = 'rsclvl')
 rscStrongColorInput = input.color(#2962ff, 'Strong', group = RSC_GROUP, inline = 'rsccol')
 rscWeakColorInput = input.color(#ff6d00, 'Weak', group = RSC_GROUP, inline = 'rsccol')
-rscOnlyOnEntryInput = input.bool(false, 'Only Mark Zone Entry', group = RSC_GROUP, tooltip = 'Only applies to the dot markers.\n\nOff: every bar beyond the level is marked, the literal reading of "RSC above 80".\n\nOn: only the first bar of each excursion.')
+rscOnlyOnEntryInput = input.bool(false, 'Alert On Zone Entry Only', group = RSC_GROUP, tooltip = 'Applies to the RSC alerts only. The zone curve is always drawn for the whole excursion.\n\nOff: the alert condition is true on every bar beyond the level.\n\nOn: only on the first bar of each excursion.')
 // [T3] RSC as a curve rather than a run of dots
-rscCurveInput = input.bool(true, 'Draw RSC as a Price Curve', group = RSC_GROUP, tooltip = 'Relative strength is a STATE that lasts for weeks, not an event on one bar, so a run of dots says the same thing many times over.\n\nOn (default): one thin moving average of price is drawn instead, coloured by the RSC zone: strong, weak, or neutral in between. It follows the candles, adds no object per bar, and doubles as a trend line.\n\nThe dot markers are a separate switch below and are off by default.')
-rscCurveLengthInput = input.int(20, 'Curve Length', minval = 2, maxval = 200, group = RSC_GROUP, tooltip = 'EMA length of the curve. 20 tracks the shape of the candles closely; longer is smoother.')
-rscNeutralColorInput = input.color(color.new(#9598a1, 45), 'Neutral', group = RSC_GROUP, inline = 'rsccol2')
-rscShowDotsInput = input.bool(false, 'Also Show Dot Markers', group = RSC_GROUP, inline = 'rsccol2', tooltip = 'The per-bar dots from v4.4. Off by default now that the curve carries the same information.')
+rscCurveInput = input.bool(true, 'Draw RSC Zone Curve', group = RSC_GROUP, tooltip = 'Relative strength is a STATE that lasts for weeks, not an event on one bar, so a run of per-bar dots says the same thing over and over.\n\nOn (default): a thin dotted curve is drawn ONLY while RSC is in a zone, and it takes a side:\n- ABOVE the candles while RSC is above the strong level, following the shape of the highs\n- BELOW the candles while RSC is under the weak level, following the lows\n\nNothing is drawn in between, so silence means "no extreme". Nothing is added per bar either, and the candles are never crossed.')
+rscCurveLengthInput = input.int(20, 'Curve Length', minval = 2, maxval = 200, group = RSC_GROUP, inline = 'rsccurve', tooltip = 'EMA length of the highs / lows the curve follows. 20 tracks the shape of the candles closely; longer is smoother.\n\nOffset is the clearance from the wick, as a multiple of ATR(14).')
+rscCurveOffsetInput = input.float(0.6, 'Offset', minval = 0.1, maxval = 5.0, step = 0.1, group = RSC_GROUP, inline = 'rsccurve')
 
 // [KRI1] Kairi Relative Index. Display and alert() only.
 showKriInput = input.bool(true, 'Kairi Relative Index (KRI)', group = KRI_GROUP, tooltip = 'KRI = (close - moving average) / moving average x 100: how far, in percent, price has stretched away from its average. A large positive KRI is overextended to the upside (overbought), a large negative one to the downside (oversold).\n\n"Flop" (above the candle) marks the bar KRI ENTERS the overbought zone, "Flip" (below the candle) the bar it enters the oversold zone. One label per excursion, not one per bar. Hover a label for the KRI value.\n\nAlerts use alert(): create an alert on this indicator and choose "Any alert() function call". The script is at Pine\'s 64-plot limit, so no alertcondition could be added.')
@@ -2470,21 +2468,23 @@ bool rscWeakSignal = showRscInput and (rscOnlyOnEntryInput ? rscWeak and not rsc
 // [T3] THE CURVE. Relative strength is a state that lasts for weeks, so it is drawn as one line that follows
 //      the candles (an EMA of the typical price) and is coloured by the zone: strong, weak, or neutral between
 //      them. No object is added per bar, and the line doubles as a trend reference. The dots remain available.
-float rscCurve = ta.ema(hlc3, rscCurveLengthInput)
-color rscCurveColor = na(rscValue) ? rscNeutralColorInput : rscStrong ? rscStrongColorInput : rscWeak ? rscWeakColorInput : rscNeutralColorInput
-plot(showRscInput and rscCurveInput ? rscCurve : na, 'RSC Curve', color = rscCurveColor, linewidth = 2)
+// [T3b] ZONE CURVE. Drawn only while RSC is at an extreme, and on the side that says which extreme it is:
+//       above the highs when the stock is outperforming the benchmark, below the lows when it is lagging.
+//       Between the levels nothing is drawn, so an empty stretch is itself the message. One plot, because the
+//       price series simply switches sides and the colour follows it; style_circles gives thin dots rather
+//       than a solid line, so it never competes with the price line or the moving averages.
+float rscCurveOffset = nz(ta.atr(14)) * rscCurveOffsetInput
+float rscCurveAbove = ta.ema(high, rscCurveLengthInput) + rscCurveOffset
+float rscCurveBelow = ta.ema(low, rscCurveLengthInput) - rscCurveOffset
+float rscCurveValue = rscStrong ? rscCurveAbove : rscWeak ? rscCurveBelow : na
+color rscCurveColor = rscStrong ? color.new(rscStrongColorInput, 20) : color.new(rscWeakColorInput, 20)
 
-// [T3] shared marker slots, MFI first. An RSC dot only appears on a bar where MFI is silent.
-bool rscDotStrong = rscShowDotsInput and rscStrongSignal and not mfiOverboughtMarker
-bool rscDotWeak = rscShowDotsInput and rscWeakSignal and not mfiOversoldMarker
+plot(showRscInput and rscCurveInput ? rscCurveValue : na, 'RSC Zone Curve', color = rscCurveColor, style = plot.style_circles, linewidth = 1)
 
-float markerAbovePrice = mfiOverboughtMarker ? high + markerStep : rscDotStrong ? high + 2 * markerStep : na
-color markerAboveColor = mfiOverboughtMarker ? color.new(mfiOverboughtColorInput, 30) : color.new(rscStrongColorInput, 30)
-float markerBelowPrice = mfiOversoldMarker ? low - markerStep : rscDotWeak ? low - 2 * markerStep : na
-color markerBelowColor = mfiOversoldMarker ? color.new(mfiOversoldColorInput, 30) : color.new(rscWeakColorInput, 30)
-
-plotchar(markerAbovePrice, title = 'MFI Overbought / RSC Strong', char = '▾', location = location.absolute, color = markerAboveColor, size = size.tiny)
-plotchar(markerBelowPrice, title = 'MFI Oversold / RSC Weak', char = '▴', location = location.absolute, color = markerBelowColor, size = size.tiny)
+// [T3] one marker per side per bar. The RSC dots are gone: the zone curve above carries that information now,
+//      so these slots belong to MFI alone.
+plotchar(mfiOverboughtMarker ? high + markerStep : na, title = 'MFI Overbought', char = '▾', location = location.absolute, color = color.new(mfiOverboughtColorInput, 30), size = size.tiny)
+plotchar(mfiOversoldMarker ? low - markerStep : na, title = 'MFI Oversold', char = '▴', location = location.absolute, color = color.new(mfiOversoldColorInput, 30), size = size.tiny)
 // value for the Data Window only, so no line is drawn on the price scale
 plot(showRscInput ? rscValue : na, 'RSC', color = rscStrongColorInput, display = display.data_window)
 
