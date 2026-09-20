@@ -32,7 +32,7 @@
 // [T3] RSC is drawn as a ZONE CURVE instead of a run of per-bar dots: thin dots (style_circles) that appear
 //      ONLY while RSC is at an extreme, and take a side to say which one - above the highs while the stock
 //      outperforms the benchmark, below the lows while it lags, nothing in between. It follows the shape of
-//      the candles (EMA of the highs / lows, offset by 0.6 ATR) and never crosses them. The per-bar RSC dot
+//      the candles (two EMA passes over the highs / lows, offset by 3 ATR) and never crosses them. The RSC dot
 //      markers are removed; MFI keeps the marker slots to itself, one per side per bar.
 // [T4] DEFAULT CHANGED: Wyckoff Phase Detection is now OFF.
 // ---------------------------------------------------------------------------------------------------------------------
@@ -676,7 +676,8 @@ rscOnlyOnEntryInput = input.bool(false, 'Alert On Zone Entry Only', group = RSC_
 // [T3] RSC as a curve rather than a run of dots
 rscCurveInput = input.bool(true, 'Draw RSC Zone Curve', group = RSC_GROUP, tooltip = 'Relative strength is a STATE that lasts for weeks, not an event on one bar, so a run of per-bar dots says the same thing over and over.\n\nOn (default): a thin dotted curve is drawn ONLY while RSC is in a zone, and it takes a side:\n- ABOVE the candles while RSC is above the strong level, following the shape of the highs\n- BELOW the candles while RSC is under the weak level, following the lows\n\nNothing is drawn in between, so silence means "no extreme". Nothing is added per bar either, and the candles are never crossed.')
 rscCurveLengthInput = input.int(20, 'Curve Length', minval = 2, maxval = 200, group = RSC_GROUP, inline = 'rsccurve', tooltip = 'EMA length of the highs / lows the curve follows. 20 tracks the shape of the candles closely; longer is smoother.\n\nOffset is the clearance from the wick, as a multiple of ATR(14).')
-rscCurveOffsetInput = input.float(0.6, 'Offset', minval = 0.1, maxval = 5.0, step = 0.1, group = RSC_GROUP, inline = 'rsccurve')
+rscCurveOffsetInput = input.float(3.0, 'Offset', minval = 0.1, maxval = 10.0, step = 0.1, group = RSC_GROUP, inline = 'rsccurve')
+rscCurveSmoothInput = input.int(5, 'Curve Smoothing', minval = 1, maxval = 50, group = RSC_GROUP, tooltip = 'Second smoothing pass over the curve. The first pass follows the highs / lows, this one takes the kinks out of it so the dotted line reads as one calm arc rather than a jagged copy of the wicks. 1 disables it.')
 
 // [KRI1] Kairi Relative Index. Display and alert() only.
 showKriInput = input.bool(true, 'Kairi Relative Index (KRI)', group = KRI_GROUP, tooltip = 'KRI = (close - moving average) / moving average x 100: how far, in percent, price has stretched away from its average. A large positive KRI is overextended to the upside (overbought), a large negative one to the downside (oversold).\n\n"Flop" (above the candle) marks the bar KRI ENTERS the overbought zone, "Flip" (below the candle) the bar it enters the oversold zone. One label per excursion, not one per bar. Hover a label for the KRI value.\n\nAlerts use alert(): create an alert on this indicator and choose "Any alert() function call". The script is at Pine\'s 64-plot limit, so no alertcondition could be added.')
@@ -2473,9 +2474,12 @@ bool rscWeakSignal = showRscInput and (rscOnlyOnEntryInput ? rscWeak and not rsc
 //       Between the levels nothing is drawn, so an empty stretch is itself the message. One plot, because the
 //       price series simply switches sides and the colour follows it; style_circles gives thin dots rather
 //       than a solid line, so it never competes with the price line or the moving averages.
+// [T3c] Two smoothing passes: the first follows the highs / lows, the second takes the kinks out of it, so the
+//       dotted line reads as one calm arc instead of a jagged copy of the wicks. The offset is generous by
+//       default (3 x ATR) to keep the dots clear of structure labels and order block edges near the candles.
 float rscCurveOffset = nz(ta.atr(14)) * rscCurveOffsetInput
-float rscCurveAbove = ta.ema(high, rscCurveLengthInput) + rscCurveOffset
-float rscCurveBelow = ta.ema(low, rscCurveLengthInput) - rscCurveOffset
+float rscCurveAbove = ta.ema(ta.ema(high, rscCurveLengthInput), rscCurveSmoothInput) + rscCurveOffset
+float rscCurveBelow = ta.ema(ta.ema(low, rscCurveLengthInput), rscCurveSmoothInput) - rscCurveOffset
 float rscCurveValue = rscStrong ? rscCurveAbove : rscWeak ? rscCurveBelow : na
 color rscCurveColor = rscStrong ? color.new(rscStrongColorInput, 20) : color.new(rscWeakColorInput, 20)
 
