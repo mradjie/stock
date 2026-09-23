@@ -74,6 +74,12 @@ swingShortInput = input.int(5, '', minval = 2, maxval = 100, group = GROUP_SIGNA
 showSignalLabelsInput = input.bool(true, 'Signal Labels', group = GROUP_SIGNAL, inline = 'siglbl', tooltip = 'Buy / TP / Flip / Flip+ / Flop text, as the AFL draws with PlotText. The arrows are separate.')
 maxSignalLabelsInput = input.int(60, 'Keep Last', minval = 1, maxval = 500, group = GROUP_SIGNAL, inline = 'siglbl')
 showArrowsInput = input.bool(true, 'Signal Arrows', group = GROUP_SIGNAL)
+// [V2] saturated, dark colours: the pale pastels of the first port disappeared on a light chart background
+buyColorInput = input.color(#1b5e20, 'Buy / Sell / Flip', group = GROUP_SIGNAL, inline = 'sigcol')
+sellColorInput = input.color(#b71c1c, '', group = GROUP_SIGNAL, inline = 'sigcol')
+flipColorInput = input.color(#e65100, '', group = GROUP_SIGNAL, inline = 'sigcol', tooltip = 'Buy and Flip sit under the bar, Sell / TP above it. Flop uses the Sell colour with the purple accent below.')
+flopColorInput = input.color(#6a1b9a, 'Flop', group = GROUP_SIGNAL, inline = 'sigcol2')
+flipPlusColorInput = input.color(#ef6c00, 'Flip+', group = GROUP_SIGNAL, inline = 'sigcol2')
 
 scarLengthInput = input.int(10, 'SCAR (Kairi) Length', minval = 2, maxval = 200, group = GROUP_OSC, inline = 'scar')
 scarLevelInput = input.float(10, 'Level', minval = 1, maxval = 100, step = 1, group = GROUP_OSC, inline = 'scar', tooltip = 'SCAR = (close - MA) / MA x 100. Overbought at +level, oversold at -level.')
@@ -85,11 +91,18 @@ mfiUpperInput = input.float(80, 'OB / OS', minval = 50, maxval = 100, step = 1, 
 mfiLowerInput = input.float(20, '', minval = 0, maxval = 50, step = 1, group = GROUP_OSC, inline = 'mfi')
 showOscMarkersInput = input.bool(true, 'Oscillator Markers', group = GROUP_OSC, inline = 'oscmark', tooltip = 'MFI squares, SCAR triangles and the MFI divergence circles. All are size.tiny and sit in fixed slots measured in ATR, from the wick outwards: MFI, SCAR, divergence.\n\nSpacing is the distance between slots as a multiple of ATR(14).')
 markerSpacingInput = input.float(0.5, 'Spacing', minval = 0.1, maxval = 3.0, step = 0.1, group = GROUP_OSC, inline = 'oscmark')
+mfiUpColorInput = input.color(#0277bd, 'MFI up / down', group = GROUP_OSC, inline = 'osccol')
+mfiDownColorInput = input.color(#ef6c00, '', group = GROUP_OSC, inline = 'osccol')
+scarUpColorInput = input.color(#00695c, 'SCAR up / down', group = GROUP_OSC, inline = 'osccol2')
+scarDownColorInput = input.color(#ad1457, '', group = GROUP_OSC, inline = 'osccol2')
 
 trendLongInput = input.int(150, 'Trend MA (long / mid / short)', minval = 2, maxval = 500, group = GROUP_TREND, inline = 'trend')
 trendMidInput = input.int(70, '', minval = 2, maxval = 500, group = GROUP_TREND, inline = 'trend')
 trendShortInput = input.int(14, '', minval = 2, maxval = 500, group = GROUP_TREND, inline = 'trend')
-showRibbonsInput = input.bool(true, 'Ribbons (RRG bottom, MFI top)', group = GROUP_TREND, tooltip = 'The AFL draws these as own-scale candle ribbons. Pine has no own-scale overlay, so they are drawn as a strip of blocks at the bottom and top of the pane.')
+// [V2] Pine can pin a strip to the bottom of the pane, but only ONE strip: two plots at location.bottom land
+//      on the same row and the second hides the first. So each ribbon gets its own edge, and each its own switch.
+showRotationRibbonInput = input.bool(true, 'Rotation Ribbon (bottom)', group = GROUP_TREND, tooltip = 'The AFL draws these as own-scale candle ribbons. Pine has no own-scale overlay, so a ribbon becomes a strip of blocks pinned to an edge of the pane - and only one strip fits per edge, which is why the two ribbons sit on opposite edges.\n\nGreen leading, blue improving, yellow lagging, red weakening.')
+showMfiRibbonInput = input.bool(false, 'MFI Ribbon (top)', group = GROUP_TREND, tooltip = 'Off by default: one strip at a time keeps the chart readable. Green oversold, red overbought, yellow neutral, blue / brown on a crossing of 20 / 80.')
 
 showLinesInput = input.bool(true, 'Stop-and-Reverse Lines', group = GROUP_VIS)
 showTableInput = input.bool(true, 'Info Table', group = GROUP_VIS, tooltip = 'Replaces the AFL Title block: price, volume value, 52-week range, position state, key levels, oscillator readings and the three trend horizons.')
@@ -287,36 +300,40 @@ float profitPercent = inLong and not na(buyPrice) and buyPrice != 0 ? (close - b
 //        slot 2   SCAR extreme
 //        slot 3   MFI divergence
 //        slot 4   the Buy / TP / Flip / Flop text labels
+// [V2] Every marker is a plotchar GLYPH rather than a plotshape: size.tiny is already the smallest shape Pine
+//      draws, and a character at size.tiny renders noticeably smaller still. Same approach as SMC Plus v4.4.
+//      Colours are saturated and dark so they carry on a light chart background; they are all inputs.
 float markerAtr = nz(ta.atr(14))
 float markerStep = markerAtr * markerSpacingInput
 
-plotshape(showArrowsInput and buySignal, title = 'Buy', style = shape.arrowup, location = location.belowbar, color = color.new(#ffffff, 0), size = size.tiny)
-plotshape(showArrowsInput and sellSignal, title = 'Sell', style = shape.arrowdown, location = location.abovebar, color = color.new(#ffffff, 0), size = size.tiny)
-plotshape(showArrowsInput and (flip or flipPlus), title = 'Flip / Flip+', style = shape.arrowup, location = location.belowbar, color = color.new(#ffeb3b, 0), size = size.tiny)
+plotchar(showArrowsInput and buySignal ? low : na, title = 'Buy', char = '▲', location = location.belowbar, color = buyColorInput, size = size.tiny)
+plotchar(showArrowsInput and sellSignal ? high : na, title = 'Sell', char = '▼', location = location.abovebar, color = sellColorInput, size = size.tiny)
+plotchar(showArrowsInput and (flip or flipPlus) ? low : na, title = 'Flip / Flip+', char = '△', location = location.belowbar, color = flipColorInput, size = size.tiny)
 
 // slot 1: one MFI marker per side. A crossing of 20 / 80 is the event, sitting in the zone is the state, so the
 // crossing takes the slot when both are true and is drawn solid while the state is drawn faded.
 bool mfiUpMarker = showOscMarkersInput and (mfiCrossUp or mfi <= mfiLowerInput)
 bool mfiDownMarker = showOscMarkersInput and (mfiCrossDown or mfi >= mfiUpperInput)
-plotshape(mfiUpMarker ? low - markerStep : na, title = 'MFI Oversold / Cross Up', style = shape.square, location = location.absolute, color = color.new(#4fc3f7, mfiCrossUp ? 0 : 45), size = size.tiny)
-plotshape(mfiDownMarker ? high + markerStep : na, title = 'MFI Overbought / Cross Down', style = shape.square, location = location.absolute, color = color.new(#ffb74d, mfiCrossDown ? 0 : 45), size = size.tiny)
+plotchar(mfiUpMarker ? low - markerStep : na, title = 'MFI Oversold / Cross Up', char = '•', location = location.absolute, color = color.new(mfiUpColorInput, mfiCrossUp ? 0 : 40), size = size.tiny)
+plotchar(mfiDownMarker ? high + markerStep : na, title = 'MFI Overbought / Cross Down', char = '•', location = location.absolute, color = color.new(mfiDownColorInput, mfiCrossDown ? 0 : 40), size = size.tiny)
 
 // slot 2: SCAR
-plotshape(showOscMarkersInput and scarOversold ? low - 2 * markerStep : na, title = 'SCAR Oversold', style = shape.triangleup, location = location.absolute, color = color.new(#26c6da, 20), size = size.tiny)
-plotshape(showOscMarkersInput and scarOverbought ? high + 2 * markerStep : na, title = 'SCAR Overbought', style = shape.triangledown, location = location.absolute, color = color.new(#f06292, 20), size = size.tiny)
+plotchar(showOscMarkersInput and scarOversold ? low - 2 * markerStep : na, title = 'SCAR Oversold', char = '▴', location = location.absolute, color = scarUpColorInput, size = size.tiny)
+plotchar(showOscMarkersInput and scarOverbought ? high + 2 * markerStep : na, title = 'SCAR Overbought', char = '▾', location = location.absolute, color = scarDownColorInput, size = size.tiny)
 
 // slot 3: MFI divergence
-plotshape(showOscMarkersInput and bullishMfiDivergence ? low - 3 * markerStep : na, title = 'MFI Bullish Divergence', style = shape.circle, location = location.absolute, color = color.new(#4fc3f7, 35), size = size.tiny)
-plotshape(showOscMarkersInput and bearishMfiDivergence ? high + 3 * markerStep : na, title = 'MFI Bearish Divergence', style = shape.circle, location = location.absolute, color = color.new(#ffb74d, 35), size = size.tiny)
+plotchar(showOscMarkersInput and bullishMfiDivergence ? low - 3 * markerStep : na, title = 'MFI Bullish Divergence', char = '◦', location = location.absolute, color = color.new(mfiUpColorInput, 25), size = size.tiny)
+plotchar(showOscMarkersInput and bearishMfiDivergence ? high + 3 * markerStep : na, title = 'MFI Bearish Divergence', char = '◦', location = location.absolute, color = color.new(mfiDownColorInput, 25), size = size.tiny)
 
-// [V1] RIBBONS. Both are pinned to the BOTTOM of the pane now, one row each, so they read as a single strip
-//      under the candles instead of framing them top and bottom. Pine cannot position anything relative to the
-//      built-in Volume overlay, which draws in the same bottom band: if they still touch, move Volume to its
-//      own pane (right-click the volume bars, "Move to" - "New pane below").
-color rrgColor = rrgLeading ? #26a69a : rrgImproving ? #42a5f5 : rrgLagging ? #ffd54f : #ef5350
-color mfiRibbonColor = mfi < mfiLowerInput ? #26a69a : mfi > mfiUpperInput ? #ef5350 : mfiCrossDown ? #8d6e63 : mfiCrossUp ? #42a5f5 : #ffd54f
-plotchar(showRibbonsInput, title = 'MFI Ribbon', char = '▬', location = location.bottom, color = color.new(mfiRibbonColor, 25), size = size.tiny)
-plotchar(showRibbonsInput, title = 'Rotation Ribbon', char = '▬', location = location.bottom, color = color.new(rrgColor, 25), size = size.tiny)
+// [V2] RIBBONS, one per pane edge. Two strips cannot share an edge: plots at location.bottom are drawn on the
+//      same row, and the later one simply hides the earlier. Rotation keeps the bottom, money flow gets the top
+//      and is off by default. Pine also cannot position anything relative to the built-in Volume overlay, which
+//      draws in the same bottom band: if they touch, move Volume to its own pane (right-click the volume bars,
+//      "Move to" - "New pane below").
+color rrgColor = rrgLeading ? #00695c : rrgImproving ? #1565c0 : rrgLagging ? #ef6c00 : #b71c1c
+color mfiRibbonColor = mfi < mfiLowerInput ? #00695c : mfi > mfiUpperInput ? #b71c1c : mfiCrossDown ? #6d4c41 : mfiCrossUp ? #1565c0 : #ef6c00
+plotchar(showRotationRibbonInput, title = 'Rotation Ribbon', char = '▬', location = location.bottom, color = color.new(rrgColor, 15), size = size.tiny)
+plotchar(showMfiRibbonInput, title = 'MFI Ribbon', char = '▬', location = location.top, color = color.new(mfiRibbonColor, 15), size = size.tiny)
 // ---------------------------------------------------------------------------------------------------------------------
 // SIGNAL LABELS  (the AFL's PlotText loop)
 // ---------------------------------------------------------------------------------------------------------------------
@@ -332,15 +349,15 @@ addSignalLabel(string labelText, bool above, color labelColor) =>
 
 if showSignalLabelsInput
     if buySignal
-        addSignalLabel('Buy ' + str.tostring(buyPrice, format.mintick), false, #66bb6a)
+        addSignalLabel('Buy ' + str.tostring(buyPrice, format.mintick), false, buyColorInput)
     if flipPlus
-        addSignalLabel('Flip+', false, #ffd54f)
+        addSignalLabel('Flip+', false, flipPlusColorInput)
     if flip
-        addSignalLabel('Flip', false, #b0bec5)
+        addSignalLabel('Flip', false, flipColorInput)
     if sellSignal
-        addSignalLabel('TP', true, #ef5350)
+        addSignalLabel('TP', true, sellColorInput)
     if flop
-        addSignalLabel('Flop', true, #ce93d8)
+        addSignalLabel('Flop', true, flopColorInput)
 
 // ---------------------------------------------------------------------------------------------------------------------
 // FIBONACCI BOX
