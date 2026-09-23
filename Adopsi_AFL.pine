@@ -83,7 +83,8 @@ rscLevelInput = input.float(2, 'Level', minval = 0.5, maxval = 50, step = 0.5, g
 mfiLengthInput = input.int(14, 'MFI Length', minval = 2, maxval = 200, group = GROUP_OSC, inline = 'mfi')
 mfiUpperInput = input.float(80, 'OB / OS', minval = 50, maxval = 100, step = 1, group = GROUP_OSC, inline = 'mfi')
 mfiLowerInput = input.float(20, '', minval = 0, maxval = 50, step = 1, group = GROUP_OSC, inline = 'mfi')
-showOscMarkersInput = input.bool(true, 'Oscillator Markers', group = GROUP_OSC, tooltip = 'SCAR triangles, MFI squares and stars, and the MFI divergence circles, at the same offsets the AFL uses.')
+showOscMarkersInput = input.bool(true, 'Oscillator Markers', group = GROUP_OSC, inline = 'oscmark', tooltip = 'MFI squares, SCAR triangles and the MFI divergence circles. All are size.tiny and sit in fixed slots measured in ATR, from the wick outwards: MFI, SCAR, divergence.\n\nSpacing is the distance between slots as a multiple of ATR(14).')
+markerSpacingInput = input.float(0.5, 'Spacing', minval = 0.1, maxval = 3.0, step = 0.1, group = GROUP_OSC, inline = 'oscmark')
 
 trendLongInput = input.int(150, 'Trend MA (long / mid / short)', minval = 2, maxval = 500, group = GROUP_TREND, inline = 'trend')
 trendMidInput = input.int(70, '', minval = 2, maxval = 500, group = GROUP_TREND, inline = 'trend')
@@ -167,8 +168,14 @@ bool mfiCrossDown = ta.crossunder(mfi, mfiUpperInput)
 
 // The AFL's divergence test: a new price extreme that the MFI does not confirm, or an MFI extreme the price
 // does not confirm. It compares against the running extreme of the same window rather than pivot to pivot.
-bool bearishMfiDivergence = (close >= ta.highest(close, mfiLengthInput) and mfi < ta.highest(mfi, mfiLengthInput)) or (mfi <= ta.lowest(mfi, mfiLengthInput) and close > ta.lowest(close, mfiLengthInput))
-bool bullishMfiDivergence = (close <= ta.lowest(close, mfiLengthInput) and mfi > ta.lowest(mfi, mfiLengthInput)) or (mfi >= ta.highest(mfi, mfiLengthInput) and close < ta.highest(close, mfiLengthInput))
+// every extreme is computed on its own line: a ta.* call inside a conditional expression may be skipped on some
+// bars, and these functions depend on their own history
+float highestClose = ta.highest(close, mfiLengthInput)
+float lowestClose = ta.lowest(close, mfiLengthInput)
+float highestMfi = ta.highest(mfi, mfiLengthInput)
+float lowestMfi = ta.lowest(mfi, mfiLengthInput)
+bool bearishMfiDivergence = (close >= highestClose and mfi < highestMfi) or (mfi <= lowestMfi and close > lowestClose)
+bool bullishMfiDivergence = (close <= lowestClose and mfi > lowestMfi) or (mfi >= highestMfi and close < highestClose)
 
 // ---------------------------------------------------------------------------------------------------------------------
 // RELATIVE ROTATION QUADRANTS
@@ -210,13 +217,13 @@ trendWord(float slope) =>
 // @function            state machine for one stop-and-reverse line
 // @returns             [line value, previous state]
 swingLine(int length) =>
-    float upperBreak = ta.highest(close, length)[1]
-    float lowerBreak = ta.lowest(close, length)[1]
-    int signal = close > upperBreak ? 1 : close < lowerBreak ? -1 : 0
+    float windowHigh = ta.highest(close, length)
+    float windowLow = ta.lowest(close, length)
+    int signal = close > windowHigh[1] ? 1 : close < windowLow[1] ? -1 : 0
     var int state = 1
     if signal != 0
         state := signal
-    [state == 1 ? ta.lowest(close, length) : ta.highest(close, length), state]
+    [state == 1 ? windowLow : windowHigh, state]
 
 [adon, adonState] = swingLine(swingLongInput)
 [tsl, tslState] = swingLine(swingShortInput)
@@ -264,6 +271,7 @@ if flip or flipPlus or flop
 
 int barsInPosition = inLong and not na(entryBarIndex) ? bar_index - entryBarIndex : na
 
+float dailyChangePercent = nz(ta.roc(close, 1))
 float yearHigh = ta.highest(high, 240)
 float yearLow = ta.lowest(low, 240)
 float cutLoss = tsl - tickSize
@@ -272,28 +280,43 @@ float profitPercent = inLong and not na(buyPrice) and buyPrice != 0 ? (close - b
 // ---------------------------------------------------------------------------------------------------------------------
 // MARKERS
 // ---------------------------------------------------------------------------------------------------------------------
+// [V1] MARKER STACK. Every marker is size.tiny and sits in a fixed slot measured in ATR, so the order never
+//      changes with zoom and two markers can never land on the same spot:
+//        arrows   at the wick itself (the trade signals, closest to price)
+//        slot 1   MFI zone or MFI crossing 20 / 80, whichever fires (crossing wins)
+//        slot 2   SCAR extreme
+//        slot 3   MFI divergence
+//        slot 4   the Buy / TP / Flip / Flop text labels
 float markerAtr = nz(ta.atr(14))
+float markerStep = markerAtr * markerSpacingInput
 
-plotshape(showArrowsInput and buySignal, title = 'Buy', style = shape.arrowup, location = location.belowbar, color = color.new(#ffffff, 0), size = size.small)
-plotshape(showArrowsInput and sellSignal, title = 'Sell', style = shape.arrowdown, location = location.abovebar, color = color.new(#ffffff, 0), size = size.small)
+plotshape(showArrowsInput and buySignal, title = 'Buy', style = shape.arrowup, location = location.belowbar, color = color.new(#ffffff, 0), size = size.tiny)
+plotshape(showArrowsInput and sellSignal, title = 'Sell', style = shape.arrowdown, location = location.abovebar, color = color.new(#ffffff, 0), size = size.tiny)
 plotshape(showArrowsInput and (flip or flipPlus), title = 'Flip / Flip+', style = shape.arrowup, location = location.belowbar, color = color.new(#ffeb3b, 0), size = size.tiny)
 
-plotshape(showOscMarkersInput and scarOversold ? low - 1.6 * markerAtr : na, title = 'SCAR Oversold', style = shape.triangleup, location = location.absolute, color = color.new(#26c6da, 20), size = size.tiny)
-plotshape(showOscMarkersInput and scarOverbought ? high + 1.6 * markerAtr : na, title = 'SCAR Overbought', style = shape.triangledown, location = location.absolute, color = color.new(#f06292, 20), size = size.tiny)
-plotshape(showOscMarkersInput and mfi <= mfiLowerInput ? low - 0.7 * markerAtr : na, title = 'MFI Oversold', style = shape.square, location = location.absolute, color = color.new(#4fc3f7, 20), size = size.tiny)
-plotshape(showOscMarkersInput and mfi >= mfiUpperInput ? high + 0.7 * markerAtr : na, title = 'MFI Overbought', style = shape.square, location = location.absolute, color = color.new(#ffb74d, 20), size = size.tiny)
-plotshape(showOscMarkersInput and mfiCrossUp ? low - 0.35 * markerAtr : na, title = 'MFI Cross Up 20', style = shape.diamond, location = location.absolute, color = color.new(#4fc3f7, 0), size = size.tiny)
-plotshape(showOscMarkersInput and mfiCrossDown ? high + 0.35 * markerAtr : na, title = 'MFI Cross Down 80', style = shape.diamond, location = location.absolute, color = color.new(#ffb74d, 0), size = size.tiny)
-plotshape(showOscMarkersInput and bullishMfiDivergence ? low - 1.0 * markerAtr : na, title = 'MFI Bullish Divergence', style = shape.circle, location = location.absolute, color = color.new(#4fc3f7, 35), size = size.tiny)
-plotshape(showOscMarkersInput and bearishMfiDivergence ? high + 1.0 * markerAtr : na, title = 'MFI Bearish Divergence', style = shape.circle, location = location.absolute, color = color.new(#ffb74d, 35), size = size.tiny)
+// slot 1: one MFI marker per side. A crossing of 20 / 80 is the event, sitting in the zone is the state, so the
+// crossing takes the slot when both are true and is drawn solid while the state is drawn faded.
+bool mfiUpMarker = showOscMarkersInput and (mfiCrossUp or mfi <= mfiLowerInput)
+bool mfiDownMarker = showOscMarkersInput and (mfiCrossDown or mfi >= mfiUpperInput)
+plotshape(mfiUpMarker ? low - markerStep : na, title = 'MFI Oversold / Cross Up', style = shape.square, location = location.absolute, color = color.new(#4fc3f7, mfiCrossUp ? 0 : 45), size = size.tiny)
+plotshape(mfiDownMarker ? high + markerStep : na, title = 'MFI Overbought / Cross Down', style = shape.square, location = location.absolute, color = color.new(#ffb74d, mfiCrossDown ? 0 : 45), size = size.tiny)
 
-// Ribbons. Pine has no own-scale overlay plot, so the AFL's PlotOHLC ribbons become a strip of blocks pinned to
-// the bottom (rotation quadrant) and the top (money flow state) of the pane.
+// slot 2: SCAR
+plotshape(showOscMarkersInput and scarOversold ? low - 2 * markerStep : na, title = 'SCAR Oversold', style = shape.triangleup, location = location.absolute, color = color.new(#26c6da, 20), size = size.tiny)
+plotshape(showOscMarkersInput and scarOverbought ? high + 2 * markerStep : na, title = 'SCAR Overbought', style = shape.triangledown, location = location.absolute, color = color.new(#f06292, 20), size = size.tiny)
+
+// slot 3: MFI divergence
+plotshape(showOscMarkersInput and bullishMfiDivergence ? low - 3 * markerStep : na, title = 'MFI Bullish Divergence', style = shape.circle, location = location.absolute, color = color.new(#4fc3f7, 35), size = size.tiny)
+plotshape(showOscMarkersInput and bearishMfiDivergence ? high + 3 * markerStep : na, title = 'MFI Bearish Divergence', style = shape.circle, location = location.absolute, color = color.new(#ffb74d, 35), size = size.tiny)
+
+// [V1] RIBBONS. Both are pinned to the BOTTOM of the pane now, one row each, so they read as a single strip
+//      under the candles instead of framing them top and bottom. Pine cannot position anything relative to the
+//      built-in Volume overlay, which draws in the same bottom band: if they still touch, move Volume to its
+//      own pane (right-click the volume bars, "Move to" - "New pane below").
 color rrgColor = rrgLeading ? #26a69a : rrgImproving ? #42a5f5 : rrgLagging ? #ffd54f : #ef5350
 color mfiRibbonColor = mfi < mfiLowerInput ? #26a69a : mfi > mfiUpperInput ? #ef5350 : mfiCrossDown ? #8d6e63 : mfiCrossUp ? #42a5f5 : #ffd54f
-plotchar(showRibbonsInput, title = 'RRG Ribbon', char = '▬', location = location.bottom, color = color.new(rrgColor, 20), size = size.tiny)
-plotchar(showRibbonsInput, title = 'MFI Ribbon', char = '▬', location = location.top, color = color.new(mfiRibbonColor, 20), size = size.tiny)
-
+plotchar(showRibbonsInput, title = 'MFI Ribbon', char = '▬', location = location.bottom, color = color.new(mfiRibbonColor, 25), size = size.tiny)
+plotchar(showRibbonsInput, title = 'Rotation Ribbon', char = '▬', location = location.bottom, color = color.new(rrgColor, 25), size = size.tiny)
 // ---------------------------------------------------------------------------------------------------------------------
 // SIGNAL LABELS  (the AFL's PlotText loop)
 // ---------------------------------------------------------------------------------------------------------------------
@@ -302,7 +325,7 @@ var array<label> signalLabels = array.new<label>()
 // @function            add one signal label and keep the pool bounded
 // @returns             void
 addSignalLabel(string labelText, bool above, color labelColor) =>
-    float labelPrice = above ? high + 1.1 * markerAtr : low - 1.1 * markerAtr
+    float labelPrice = above ? high + 4 * markerStep : low - 4 * markerStep
     signalLabels.push(label.new(bar_index, labelPrice, labelText, xloc.bar_index, yloc.price, color(na), above ? label.style_label_down : label.style_label_up, labelColor, size.tiny))
     while signalLabels.size() > maxSignalLabelsInput
         label.delete(signalLabels.shift())
@@ -332,9 +355,11 @@ var line fibLine618 = na
 var line fibLine786 = na
 var line fibLine100 = na
 
+// computed on every bar: a ta.* call that only runs on some bars loses its history
+float fibLow = ta.lowest(low, fibLookbackInput)
+float fibHigh = ta.highest(high, fibLookbackInput)
+
 if showFibInput and barstate.islast
-    float fibLow = ta.lowest(low, fibLookbackInput)
-    float fibHigh = ta.highest(high, fibLookbackInput)
     float fibRange = fibHigh - fibLow
     int fibLeft = bar_index - fibLookbackInput + 1
     int fibMid = bar_index - int(fibLookbackInput / 2)
@@ -360,41 +385,41 @@ if showFibInput and barstate.islast
 // ---------------------------------------------------------------------------------------------------------------------
 string tablePosition = tablePositionInput == 'Top Right' ? position.top_right : tablePositionInput == 'Top Left' ? position.top_left : tablePositionInput == 'Bottom Right' ? position.bottom_right : tablePositionInput == 'Bottom Left' ? position.bottom_left : position.middle_right
 
-var table infoTable = table.new(tablePosition, 2, 14, border_width = 1, border_color = color.new(#9598a1, 70), frame_width = 1, frame_color = color.new(#9598a1, 70))
+// [V1] No grid: border_width and frame_width are 0, so the table reads as a block of text rather than a
+//      spreadsheet. Labels are muted, values carry the colour, and the rows are packed - three price pairs on
+//      one line each, the three oscillators on one line.
+var table infoTable = table.new(tablePosition, 2, 11, border_width = 0, frame_width = 0)
 
 // @function            one table row
 // @returns             void
 infoRow(int row, string label, string value, color valueColor) =>
-    infoTable.cell(0, row, label, text_color = color.new(chart.fg_color, 35), text_size = size.tiny, text_halign = text.align_left)
+    infoTable.cell(0, row, label, text_color = color.new(chart.fg_color, 55), text_size = size.tiny, text_halign = text.align_left)
     infoTable.cell(1, row, value, text_color = valueColor, text_size = size.tiny, text_halign = text.align_right)
 
 if showTableInput and barstate.islast
-    color neutralColor = chart.fg_color
+    color neutralColor = color.new(chart.fg_color, 15)
     color upColor = #26a69a
     color downColor = #ef5350
 
-    string stateText = inLong ? 'LONG since ' + str.tostring(barsInPosition) + ' bars' : 'FLAT'
-    string mfiState = mfi < mfiLowerInput ? 'Oversold' : mfi >= mfiUpperInput ? 'Overbought' : 'Neutral'
-    string rscState = rsc <= -rscLevelInput ? 'Oversold' : rsc >= rscLevelInput ? 'Overbought' : 'Neutral'
-    string scarState = scar <= -scarLevelInput ? 'Oversold' : scar >= scarLevelInput ? 'Overbought' : 'Neutral'
+    string stateText = inLong ? 'Long ' + str.tostring(barsInPosition) + 'b' + (na(profitPercent) ? '' : '  ' + str.tostring(profitPercent, '0.0') + '%') : 'Flat'
+    string mfiState = mfi < mfiLowerInput ? 'OS' : mfi >= mfiUpperInput ? 'OB' : '-'
+    string rscState = rsc <= -rscLevelInput ? 'OS' : rsc >= rscLevelInput ? 'OB' : '-'
+    string scarState = scar <= -scarLevelInput ? 'OS' : scar >= scarLevelInput ? 'OB' : '-'
     string rrgState = rrgLeading ? 'Leading' : rrgWeakening ? 'Weakening' : rrgLagging ? 'Lagging' : 'Improving'
 
-    infoTable.cell(0, 0, syminfo.ticker, text_color = neutralColor, text_size = size.small, text_halign = text.align_left)
-    infoTable.cell(1, 0, str.tostring(close, format.mintick) + '  ' + str.tostring(nz(ta.roc(close, 1)), '0.00') + '%', text_color = close >= nz(close[1]) ? upColor : downColor, text_size = size.small, text_halign = text.align_right)
+    infoTable.cell(0, 0, syminfo.ticker, text_color = color.new(chart.fg_color, 0), text_size = size.small, text_halign = text.align_left)
+    infoTable.cell(1, 0, str.tostring(close, format.mintick) + '  ' + str.tostring(dailyChangePercent, '0.00') + '%', text_color = dailyChangePercent >= 0 ? upColor : downColor, text_size = size.small, text_halign = text.align_right)
 
-    infoRow(1, 'Position', stateText, inLong ? upColor : neutralColor)
-    infoRow(2, 'Profit', na(profitPercent) ? '-' : str.tostring(profitPercent, '0.00') + '%', na(profitPercent) ? neutralColor : profitPercent >= 0 ? upColor : downColor)
-    infoRow(3, 'Trx today', str.tostring(traxDay, '0.00') + ' B  (' + str.tostring(profOver20, '0') + '% vs 20d)', profOver20 > 0 ? upColor : neutralColor)
-    infoRow(4, 'Key levels', 'adon ' + str.tostring(adon, format.mintick) + ' | tsl ' + str.tostring(tsl, format.mintick), neutralColor)
-    infoRow(5, 'Buy / Avg down', str.tostring(priceBE1, format.mintick) + ' / ' + str.tostring(priceBE2, format.mintick), neutralColor)
-    infoRow(6, 'TP1 / TP2', str.tostring(priceTP1, format.mintick) + ' / ' + str.tostring(priceTP2, format.mintick), upColor)
-    infoRow(7, 'Cut loss / SL1', str.tostring(cutLoss, format.mintick) + ' / ' + str.tostring(priceSL1, format.mintick), downColor)
-    infoRow(8, 'ARA / ARB', str.tostring(priceARA, format.mintick) + ' / ' + str.tostring(priceARB, format.mintick), neutralColor)
-    infoRow(9, '52w range', str.tostring(yearLow, format.mintick) + ' - ' + str.tostring(yearHigh, format.mintick), neutralColor)
-    infoRow(10, 'MFI / RSC / SCAR', str.tostring(mfi, '0.0') + ' ' + mfiState + ' | ' + str.tostring(rsc, '0.00') + ' ' + rscState + ' | ' + str.tostring(scar, '0.0') + ' ' + scarState, neutralColor)
-    infoRow(11, 'Rotation', rrgState + (rrgEntryUp ? '  (entry)' : rrgExitDown ? '  (exit)' : ''), rrgLeading or rrgImproving ? upColor : downColor)
-    infoRow(12, 'Trend S/M/L', trendWord(trendShort) + ' | ' + trendWord(trendMid) + ' | ' + trendWord(trendLong), trendShort > 0 ? upColor : downColor)
-    infoRow(13, 'Tick size', str.tostring(tickSize, '0'), neutralColor)
+    infoRow(1, 'Position', stateText, inLong ? (nz(profitPercent) >= 0 ? upColor : downColor) : neutralColor)
+    infoRow(2, 'Trx', str.tostring(traxDay, '0.0') + ' B   ' + str.tostring(profOver20, '0') + '% vs 20d', profOver20 > 0 ? upColor : neutralColor)
+    infoRow(3, 'adon / tsl', str.tostring(adon, format.mintick) + '  ' + str.tostring(tsl, format.mintick), neutralColor)
+    infoRow(4, 'Buy / avg dn', str.tostring(priceBE1, format.mintick) + '  ' + str.tostring(priceBE2, format.mintick), neutralColor)
+    infoRow(5, 'TP1 / TP2', str.tostring(priceTP1, format.mintick) + '  ' + str.tostring(priceTP2, format.mintick), upColor)
+    infoRow(6, 'Cut / SL1', str.tostring(cutLoss, format.mintick) + '  ' + str.tostring(priceSL1, format.mintick), downColor)
+    infoRow(7, 'ARA / ARB', str.tostring(priceARA, format.mintick) + '  ' + str.tostring(priceARB, format.mintick), neutralColor)
+    infoRow(8, '52w', str.tostring(yearLow, format.mintick) + ' - ' + str.tostring(yearHigh, format.mintick), neutralColor)
+    infoRow(9, 'MFI / RSC / SCAR', str.tostring(mfi, '0') + ' ' + mfiState + '   ' + str.tostring(rsc, '0.0') + ' ' + rscState + '   ' + str.tostring(scar, '0.0') + ' ' + scarState, neutralColor)
+    infoRow(10, 'Rotation / trend', rrgState + '   ' + trendWord(trendShort) + ' / ' + trendWord(trendMid) + ' / ' + trendWord(trendLong), rrgLeading or rrgImproving ? upColor : downColor)
 
 // ---------------------------------------------------------------------------------------------------------------------
 // WATERMARK  (the GfxTextOut block)
