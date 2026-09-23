@@ -1,0 +1,420 @@
+// Adopsi AFL - "Nggulung Duit Trading System v.1.0" ported from AmiBroker AFL to Pine Script v6
+//
+// WHAT THIS IS
+// A port of the AFL chart template: the same signals (Buy / Sell / Flip / Flip+ / Flop), the same stop-and-
+// reverse lines, the same IDX price ladder (tick size, ARA/ARB, BE/TP/SL), the same oscillators (SCAR/Kairi,
+// Mansfield RSC vs IHSG, MFI with its divergence test), the same trend classification and the same ribbons.
+//
+// WHAT WAS DROPPED, AND WHY
+//   - Backtest block (SetOption, PositionScore = Random() * MonteCarlo, ApplyStop): a Pine indicator cannot
+//     size positions, and a PositionScore of Random() is not a ranking rule anyway. Port it to a strategy if
+//     you want it, but note the scoring line would have to be replaced with something meaningful first.
+//   - Exploration / AddColumn block: TradingView's equivalent is the Pine Screener, which is a different
+//     script type. The same numbers are in the info table instead.
+//   - GfxTextOut watermark: redrawn as a table (Pine has no GDI text), optional and off by default.
+//   - Heikin-Ashi / MACD candle-colour block: it computed HaOpen/HaClose and several colour arrays that the
+//     AFL never plots (every Plot call in that section is commented out). Nothing was lost by leaving it out.
+//   - LineArray Fibonacci: kept, but see the note on repainting below.
+//
+// BUGS AND ODDITIES FOUND IN THE AFL (carried over only where they affect signals)
+//   1. MFIPoint is always 0: MFI1d..MFI4d test `MFI(14) < 0`, and MFI is bounded 0..100. Same block in the
+//      SCAR section tests `< 5` and in the RSC section `< 0`, so the three "point" counters are not comparable.
+//      None of them is used by a signal, so this is dead code. Not ported.
+//   2. ARBProsen uses the SAME tiers as ARA (35/25/20). The real ARB rule differs and has changed several
+//      times. Ported faithfully, with the percentages exposed as inputs so you can set the current rule.
+//   3. g60 = (EMA60*(2/4-1) - EMA60*(2/6-1)) / (2/4 - 2/6) simplifies EXACTLY to EMA(C,60). The arithmetic
+//      cancels. Ported as a plain EMA(60) with this note.
+//   4. Price rounding `X - (X % tick) + tick` rounds UP to the next tick, and adds a whole tick when X is
+//      already on the grid, so every level sits one tick above its nominal value. Kept for fidelity, with a
+//      switch ("Exact Tick Rounding") that floors instead.
+//   5. The Fibonacci box is recomputed from the LAST 80 bars on every bar, so its levels move as new bars
+//      arrive: historical readings of it are not what you would have seen at the time. Kept, default off.
+//   6. `trendup`/`trendcolor` call ValueWhen(C, O<C) with the arguments in the wrong order. The result is
+//      never plotted in the AFL, so it is not ported.
+//   7. TP/SL percentages are measured from different anchors: TP from today's close, SL from YESTERDAY's
+//      close. Ported as written; both anchors are visible in the table.
+//   8. AVU vs AVUPlus: AVUPlus excludes BEDI_MFI (bearish MFI divergence), and AVU is what remains after
+//      AVUPlus is excluded, so in practice "Flip" is the flip that carries a bearish divergence and "Flip+"
+//      is the clean one. That is the opposite of what the names suggest. Ported as written.
+//
+// REPAINTING
+//   Buy / Sell cross the 21-bar stop-and-reverse line, whose value depends on the highest / lowest CLOSE of
+//   the last 21 bars including the current one. On a forming bar it can therefore move; on closed bars it is
+//   fixed. Use "Once Per Bar Close" for alerts. Everything else reads confirmed data only.
+
+//@version=6
+indicator('Adopsi AFL', 'Adopsi AFL', overlay = true, max_labels_count = 500, max_lines_count = 100, max_boxes_count = 50)
+
+// ---------------------------------------------------------------------------------------------------------------------
+// INPUTS
+// ---------------------------------------------------------------------------------------------------------------------
+GROUP_LEVEL = 'IDX Price Ladder'
+GROUP_SIGNAL = 'Signals'
+GROUP_OSC = 'Oscillators'
+GROUP_TREND = 'Trend & Rotation'
+GROUP_VIS = 'Display'
+
+legacyTicksInput = input.bool(true, 'Historical Tick Size Eras', group = GROUP_LEVEL, tooltip = 'The AFL carries three IDX tick ladders: before 6 Jan 2014, 6 Jan 2014 to 2 May 2016, and the current one. Off uses the current ladder for all history, which is what you want when you only trade recent data.')
+exactTickInput = input.bool(false, 'Exact Tick Rounding', group = GROUP_LEVEL, tooltip = 'The AFL rounds every level with `X - (X % tick) + tick`, which rounds UP and adds a whole tick when X already sits on the grid. Off keeps that behaviour for fidelity; on floors to the grid instead.')
+araTier1Input = input.float(35, 'ARA % (<200 / 200-5000 / >5000)', minval = 1, maxval = 100, group = GROUP_LEVEL, inline = 'ara')
+araTier2Input = input.float(25, '', minval = 1, maxval = 100, group = GROUP_LEVEL, inline = 'ara')
+araTier3Input = input.float(20, '', minval = 1, maxval = 100, group = GROUP_LEVEL, inline = 'ara')
+arbTier1Input = input.float(35, 'ARB % (<200 / 200-5000 / >5000)', minval = 1, maxval = 100, group = GROUP_LEVEL, inline = 'arb', tooltip = 'The AFL uses the ARA tiers for ARB as well. BEI has changed the ARB rule several times, so set the current one here.')
+arbTier2Input = input.float(25, '', minval = 1, maxval = 100, group = GROUP_LEVEL, inline = 'arb')
+arbTier3Input = input.float(20, '', minval = 1, maxval = 100, group = GROUP_LEVEL, inline = 'arb')
+be1Input = input.float(1.0, 'Buy Below % (BE1 / BE2)', minval = 0, maxval = 50, step = 0.5, group = GROUP_LEVEL, inline = 'be')
+be2Input = input.float(4.0, '', minval = 0, maxval = 50, step = 0.5, group = GROUP_LEVEL, inline = 'be')
+tp1Input = input.float(5.5, 'Target % (TP1 / TP2)', minval = 0.5, maxval = 100, step = 0.5, group = GROUP_LEVEL, inline = 'tp')
+tp2Input = input.float(10.0, '', minval = 0.5, maxval = 100, step = 0.5, group = GROUP_LEVEL, inline = 'tp')
+sl1Input = input.float(15.0, 'Stop % (SL1 / SL2)', minval = 0.5, maxval = 100, step = 0.5, group = GROUP_LEVEL, inline = 'sl', tooltip = 'Measured from YESTERDAY\'s close, as in the AFL, while the targets are measured from today\'s close.')
+sl2Input = input.float(25.0, '', minval = 0.5, maxval = 100, step = 0.5, group = GROUP_LEVEL, inline = 'sl')
+
+swingLongInput = input.int(21, 'Stop-and-Reverse Length (adon / tsl)', minval = 2, maxval = 200, group = GROUP_SIGNAL, inline = 'sar', tooltip = 'adon is the slow line the Buy / Sell crosses use; tsl is the fast line the Flip signals use and the source of the trigger and cut-loss prices.')
+swingShortInput = input.int(5, '', minval = 2, maxval = 100, group = GROUP_SIGNAL, inline = 'sar')
+showSignalLabelsInput = input.bool(true, 'Signal Labels', group = GROUP_SIGNAL, inline = 'siglbl', tooltip = 'Buy / TP / Flip / Flip+ / Flop text, as the AFL draws with PlotText. The arrows are separate.')
+maxSignalLabelsInput = input.int(60, 'Keep Last', minval = 1, maxval = 500, group = GROUP_SIGNAL, inline = 'siglbl')
+showArrowsInput = input.bool(true, 'Signal Arrows', group = GROUP_SIGNAL)
+
+scarLengthInput = input.int(10, 'SCAR (Kairi) Length', minval = 2, maxval = 200, group = GROUP_OSC, inline = 'scar')
+scarLevelInput = input.float(10, 'Level', minval = 1, maxval = 100, step = 1, group = GROUP_OSC, inline = 'scar', tooltip = 'SCAR = (close - MA) / MA x 100. Overbought at +level, oversold at -level.')
+rscSymbolInput = input.symbol('IDX:COMPOSITE', 'RSC Benchmark', group = GROUP_OSC, tooltip = 'The AFL uses Foreign("IHSG","C"). IDX:COMPOSITE is the IHSG on TradingView.')
+rscPeriodInput = input.int(52, 'RSC Period', minval = 2, maxval = 500, group = GROUP_OSC, inline = 'rsc')
+rscLevelInput = input.float(2, 'Level', minval = 0.5, maxval = 50, step = 0.5, group = GROUP_OSC, inline = 'rsc', tooltip = 'Mansfield relative strength: ((close / benchmark) / its own average - 1) x 10.')
+mfiLengthInput = input.int(14, 'MFI Length', minval = 2, maxval = 200, group = GROUP_OSC, inline = 'mfi')
+mfiUpperInput = input.float(80, 'OB / OS', minval = 50, maxval = 100, step = 1, group = GROUP_OSC, inline = 'mfi')
+mfiLowerInput = input.float(20, '', minval = 0, maxval = 50, step = 1, group = GROUP_OSC, inline = 'mfi')
+showOscMarkersInput = input.bool(true, 'Oscillator Markers', group = GROUP_OSC, tooltip = 'SCAR triangles, MFI squares and stars, and the MFI divergence circles, at the same offsets the AFL uses.')
+
+trendLongInput = input.int(150, 'Trend MA (long / mid / short)', minval = 2, maxval = 500, group = GROUP_TREND, inline = 'trend')
+trendMidInput = input.int(70, '', minval = 2, maxval = 500, group = GROUP_TREND, inline = 'trend')
+trendShortInput = input.int(14, '', minval = 2, maxval = 500, group = GROUP_TREND, inline = 'trend')
+showRibbonsInput = input.bool(true, 'Ribbons (RRG bottom, MFI top)', group = GROUP_TREND, tooltip = 'The AFL draws these as own-scale candle ribbons. Pine has no own-scale overlay, so they are drawn as a strip of blocks at the bottom and top of the pane.')
+
+showLinesInput = input.bool(true, 'Stop-and-Reverse Lines', group = GROUP_VIS)
+showTableInput = input.bool(true, 'Info Table', group = GROUP_VIS, tooltip = 'Replaces the AFL Title block: price, volume value, 52-week range, position state, key levels, oscillator readings and the three trend horizons.')
+tablePositionInput = input.string('Top Right', 'Table Position', options = ['Top Right', 'Top Left', 'Bottom Right', 'Bottom Left', 'Middle Right'], group = GROUP_VIS)
+showWatermarkInput = input.bool(false, 'Watermark', group = GROUP_VIS, tooltip = 'The GfxTextOut block: ticker, price and company name in the middle of the chart. Off by default because it sits on top of the candles.')
+showFibInput = input.bool(false, 'Fibonacci Box', group = GROUP_VIS, inline = 'fib', tooltip = 'Retracement levels of the last N bars. It is recomputed on every bar, so the levels move as the range moves; treat it as a live reading, not as history.')
+fibLookbackInput = input.int(80, 'Bars', minval = 10, maxval = 500, group = GROUP_VIS, inline = 'fib')
+
+// ---------------------------------------------------------------------------------------------------------------------
+// IDX PRICE LADDER
+// ---------------------------------------------------------------------------------------------------------------------
+// The three eras of the AFL, keyed on the same dates (DateNum 1140106 and 1160502).
+int eraOne = timestamp('Asia/Jakarta', 2014, 1, 6, 0, 0)
+int eraTwo = timestamp('Asia/Jakarta', 2016, 5, 2, 0, 0)
+
+float tickLegacyOne = close < 200 ? 1 : close < 500 ? 5 : close < 2000 ? 10 : close < 5000 ? 25 : 50
+float tickLegacyTwo = close < 500 ? 1 : close < 5000 ? 5 : 25
+float tickCurrent = close < 200 ? 1 : close < 500 ? 2 : close < 2000 ? 5 : close < 5000 ? 10 : 25
+float tickSize = not legacyTicksInput ? tickCurrent : time < eraOne ? tickLegacyOne : time < eraTwo ? tickLegacyTwo : tickCurrent
+
+// @function            round a price onto the tick grid
+// @returns             float
+// The AFL form `X - (X % tick) + tick` rounds UP and overshoots by a full tick when X is already on the grid.
+tickRound(float price) =>
+    float floored = price - price % tickSize
+    exactTickInput ? floored : floored + tickSize
+
+float avgPrice = (open + high + low + close) / 4
+float yesterdayClose = close[1]
+
+float araPercent = close < 200 ? araTier1Input : close < 5000 ? araTier2Input : araTier3Input
+float arbPercent = close < 200 ? arbTier1Input : close < 5000 ? arbTier2Input : arbTier3Input
+
+float priceARA = tickRound(close + close * araPercent / 100)
+float priceARB = tickRound(close - close * arbPercent / 100)
+float priceBE1 = tickRound(avgPrice - avgPrice * be1Input / 100)
+float priceBE2 = tickRound(avgPrice - avgPrice * be2Input / 100)
+float priceTP1 = tickRound(close + close * tp1Input / 100)
+float priceTP2 = tickRound(close + close * tp2Input / 100)
+float priceSL1 = tickRound(close - yesterdayClose * sl1Input / 100)
+float priceSL2 = tickRound(close - yesterdayClose * sl2Input / 100)
+
+// ---------------------------------------------------------------------------------------------------------------------
+// VOLUME VALUE
+// ---------------------------------------------------------------------------------------------------------------------
+// TraxDay is the value traded in billions of rupiah, the AFL's liquidity filter. On a daily chart TodayVolume is
+// simply the bar's volume; intraday it accumulates from the start of the session, as `Sum(V, Bar_today)` does.
+var float sessionVolume = 0.0
+bool newSession = timeframe.isintraday ? ta.change(time('D')) != 0 : true
+sessionVolume := newSession ? nz(volume) : sessionVolume + nz(volume)
+float todayVolume = timeframe.isintraday ? sessionVolume : nz(volume)
+
+float dailyVolumeEma = request.security(syminfo.tickerid, 'D', ta.ema(nz(volume), 20), lookahead = barmerge.lookahead_off)
+float traxDay = todayVolume * hlc3 / 1e9
+float trax20 = dailyVolumeEma * hlc3 / 1e9
+float profOver20 = dailyVolumeEma > 0 ? (todayVolume - dailyVolumeEma) / dailyVolumeEma * 100 : 0.0
+
+// ---------------------------------------------------------------------------------------------------------------------
+// OSCILLATORS
+// ---------------------------------------------------------------------------------------------------------------------
+// SCAR is Kairi: distance from a moving average in percent.
+float scarMa = ta.sma(close, scarLengthInput)
+float scar = scarMa != 0 ? (close - scarMa) / scarMa * 100 : na
+bool scarOverbought = scar >= scarLevelInput
+bool scarOversold = scar <= -scarLevelInput
+
+// Mansfield relative strength against the benchmark. lookahead_off and the chart timeframe, so no leak.
+float benchmarkClose = request.security(rscSymbolInput, timeframe.period, close, lookahead = barmerge.lookahead_off)
+float cociente = benchmarkClose > 0 ? close / benchmarkClose : na
+float basePrice = ta.sma(cociente, rscPeriodInput)
+float rsc = basePrice != 0 ? (cociente / basePrice - 1) * 10 : na
+
+float mfi = ta.mfi(hlc3, mfiLengthInput)
+bool mfiCrossUp = ta.crossover(mfi, mfiLowerInput)
+bool mfiCrossDown = ta.crossunder(mfi, mfiUpperInput)
+
+// The AFL's divergence test: a new price extreme that the MFI does not confirm, or an MFI extreme the price
+// does not confirm. It compares against the running extreme of the same window rather than pivot to pivot.
+bool bearishMfiDivergence = (close >= ta.highest(close, mfiLengthInput) and mfi < ta.highest(mfi, mfiLengthInput)) or (mfi <= ta.lowest(mfi, mfiLengthInput) and close > ta.lowest(close, mfiLengthInput))
+bool bullishMfiDivergence = (close <= ta.lowest(close, mfiLengthInput) and mfi > ta.lowest(mfi, mfiLengthInput)) or (mfi >= ta.highest(mfi, mfiLengthInput) and close < ta.highest(close, mfiLengthInput))
+
+// ---------------------------------------------------------------------------------------------------------------------
+// RELATIVE ROTATION QUADRANTS
+// ---------------------------------------------------------------------------------------------------------------------
+// rs is a 12/26 moving average spread rebased to 100; rm is the same transform applied to rs against its own
+// 9-period average. The AFL's MA(rs, 1) is rs itself, so it is omitted here.
+float rs1 = ta.sma(close, 12)
+float rs2 = ta.sma(close, 26)
+float rs = rs2 != 0 ? 100 * ((rs1 - rs2) / rs2 + 1) : na
+float rmBase = ta.sma(rs, 9)
+float rm = rmBase != 0 ? 100 * ((rs - rmBase) / rmBase + 1) : na
+
+bool rrgLeading = rs > 100 and rm > 100
+bool rrgWeakening = rs > 100 and rm < 100
+bool rrgLagging = rs < 100 and rm < 100
+bool rrgImproving = rs < 100 and rm > 100
+bool rrgEntryUp = rrgImproving and rrgLagging[1] and profOver20 > 3
+bool rrgExitDown = rrgWeakening and rrgLeading[1] and profOver20 <= 3
+
+// ---------------------------------------------------------------------------------------------------------------------
+// TREND
+// ---------------------------------------------------------------------------------------------------------------------
+// LinRegSlope(MA(C, n), 2) over two points is simply the one-bar change of that average.
+float trendLong = ta.change(ta.sma(close, trendLongInput))
+float trendMid = ta.change(ta.sma(close, trendMidInput))
+float trendShort = ta.change(ta.sma(close, trendShortInput))
+
+// @function            the AFL's trend wording for a slope
+// @returns             string
+trendWord(float slope) =>
+    slope > 0 and slope < 0.3 ? 'Weak Up' : slope >= 0.3 and slope < 0.6 ? 'Medium Up' : slope >= 0.6 ? 'Strong Up' : slope < 0 and slope > -0.3 ? 'Weak Down' : slope <= -0.3 and slope > -0.6 ? 'Medium Down' : slope <= -0.6 ? 'Strong Down' : 'Sideways'
+
+// ---------------------------------------------------------------------------------------------------------------------
+// STOP AND REVERSE LINES
+// ---------------------------------------------------------------------------------------------------------------------
+// The AFL builds these with ValueWhen over a +1 / -1 state: while the state is up the line is the LOWEST close
+// of the window (a trailing stop under price), and while it is down the line is the HIGHEST close (a trailing
+// stop above price). Pine keeps the state in a var instead of ValueWhen.
+// @function            state machine for one stop-and-reverse line
+// @returns             [line value, previous state]
+swingLine(int length) =>
+    float upperBreak = ta.highest(close, length)[1]
+    float lowerBreak = ta.lowest(close, length)[1]
+    int signal = close > upperBreak ? 1 : close < lowerBreak ? -1 : 0
+    var int state = 1
+    if signal != 0
+        state := signal
+    [state == 1 ? ta.lowest(close, length) : ta.highest(close, length), state]
+
+[adon, adonState] = swingLine(swingLongInput)
+[tsl, tslState] = swingLine(swingShortInput)
+// g60 in the AFL algebraically reduces to EMA(close, 60): the weights cancel exactly.
+float g60 = ta.ema(close, 60)
+float tslPrevious = tsl[1]
+
+plot(showLinesInput ? adon : na, 'adon (slow SAR)', color = color.new(#66bb6a, 0), style = plot.style_stepline, linewidth = 2)
+plot(showLinesInput ? tsl : na, 'tsl (fast SAR)', color = color.new(#9598a1, 0), style = plot.style_stepline, linewidth = 1)
+plot(showLinesInput ? g60 : na, 'EMA 60', color = color.new(#42a5f5, 30), linewidth = 1)
+
+// ---------------------------------------------------------------------------------------------------------------------
+// SIGNALS
+// ---------------------------------------------------------------------------------------------------------------------
+bool buyLogic = ta.crossover(close, adon)
+bool sellLogic = ta.crossunder(close, adon)
+
+// Flop: stretched (SCAR) and confirmed by relative strength or money flow turning down.
+bool flop = scarOverbought and (rsc >= rscLevelInput or mfi >= mfiUpperInput or mfiCrossDown)
+// Flip+ is the clean flip; Flip is the same flip when a bearish MFI divergence is present (see note 8 above).
+bool flipPlus = ta.crossover(close, tsl) and close > adon and not (flop or bearishMfiDivergence or mfi >= mfiUpperInput)
+bool flip = ta.crossover(close, tsl) and close > adon and not (flop or mfi >= mfiUpperInput or flipPlus)
+
+// ExRem: one Buy per position, one Sell per position.
+var bool inLong = false
+bool buySignal = buyLogic and not inLong
+bool sellSignal = sellLogic and inLong
+if buySignal
+    inLong := true
+if sellSignal
+    inLong := false
+
+// ValueWhen equivalents
+var float buyPrice = na
+var float sellPrice = na
+var float triggerPrice = na
+var int entryBarIndex = na
+if buySignal
+    buyPrice := tslPrevious
+    entryBarIndex := bar_index
+if sellSignal
+    sellPrice := tslPrevious
+if flip or flipPlus or flop
+    triggerPrice := tslPrevious
+
+int barsInPosition = inLong and not na(entryBarIndex) ? bar_index - entryBarIndex : na
+
+float yearHigh = ta.highest(high, 240)
+float yearLow = ta.lowest(low, 240)
+float cutLoss = tsl - tickSize
+float profitPercent = inLong and not na(buyPrice) and buyPrice != 0 ? (close - buyPrice) / buyPrice * 100 : na
+
+// ---------------------------------------------------------------------------------------------------------------------
+// MARKERS
+// ---------------------------------------------------------------------------------------------------------------------
+float markerAtr = nz(ta.atr(14))
+
+plotshape(showArrowsInput and buySignal, title = 'Buy', style = shape.arrowup, location = location.belowbar, color = color.new(#ffffff, 0), size = size.small)
+plotshape(showArrowsInput and sellSignal, title = 'Sell', style = shape.arrowdown, location = location.abovebar, color = color.new(#ffffff, 0), size = size.small)
+plotshape(showArrowsInput and (flip or flipPlus), title = 'Flip / Flip+', style = shape.arrowup, location = location.belowbar, color = color.new(#ffeb3b, 0), size = size.tiny)
+
+plotshape(showOscMarkersInput and scarOversold ? low - 1.6 * markerAtr : na, title = 'SCAR Oversold', style = shape.triangleup, location = location.absolute, color = color.new(#26c6da, 20), size = size.tiny)
+plotshape(showOscMarkersInput and scarOverbought ? high + 1.6 * markerAtr : na, title = 'SCAR Overbought', style = shape.triangledown, location = location.absolute, color = color.new(#f06292, 20), size = size.tiny)
+plotshape(showOscMarkersInput and mfi <= mfiLowerInput ? low - 0.7 * markerAtr : na, title = 'MFI Oversold', style = shape.square, location = location.absolute, color = color.new(#4fc3f7, 20), size = size.tiny)
+plotshape(showOscMarkersInput and mfi >= mfiUpperInput ? high + 0.7 * markerAtr : na, title = 'MFI Overbought', style = shape.square, location = location.absolute, color = color.new(#ffb74d, 20), size = size.tiny)
+plotshape(showOscMarkersInput and mfiCrossUp ? low - 0.35 * markerAtr : na, title = 'MFI Cross Up 20', style = shape.diamond, location = location.absolute, color = color.new(#4fc3f7, 0), size = size.tiny)
+plotshape(showOscMarkersInput and mfiCrossDown ? high + 0.35 * markerAtr : na, title = 'MFI Cross Down 80', style = shape.diamond, location = location.absolute, color = color.new(#ffb74d, 0), size = size.tiny)
+plotshape(showOscMarkersInput and bullishMfiDivergence ? low - 1.0 * markerAtr : na, title = 'MFI Bullish Divergence', style = shape.circle, location = location.absolute, color = color.new(#4fc3f7, 35), size = size.tiny)
+plotshape(showOscMarkersInput and bearishMfiDivergence ? high + 1.0 * markerAtr : na, title = 'MFI Bearish Divergence', style = shape.circle, location = location.absolute, color = color.new(#ffb74d, 35), size = size.tiny)
+
+// Ribbons. Pine has no own-scale overlay plot, so the AFL's PlotOHLC ribbons become a strip of blocks pinned to
+// the bottom (rotation quadrant) and the top (money flow state) of the pane.
+color rrgColor = rrgLeading ? #26a69a : rrgImproving ? #42a5f5 : rrgLagging ? #ffd54f : #ef5350
+color mfiRibbonColor = mfi < mfiLowerInput ? #26a69a : mfi > mfiUpperInput ? #ef5350 : mfiCrossDown ? #8d6e63 : mfiCrossUp ? #42a5f5 : #ffd54f
+plotchar(showRibbonsInput, title = 'RRG Ribbon', char = '▬', location = location.bottom, color = color.new(rrgColor, 20), size = size.tiny)
+plotchar(showRibbonsInput, title = 'MFI Ribbon', char = '▬', location = location.top, color = color.new(mfiRibbonColor, 20), size = size.tiny)
+
+// ---------------------------------------------------------------------------------------------------------------------
+// SIGNAL LABELS  (the AFL's PlotText loop)
+// ---------------------------------------------------------------------------------------------------------------------
+var array<label> signalLabels = array.new<label>()
+
+// @function            add one signal label and keep the pool bounded
+// @returns             void
+addSignalLabel(string labelText, bool above, color labelColor) =>
+    float labelPrice = above ? high + 1.1 * markerAtr : low - 1.1 * markerAtr
+    signalLabels.push(label.new(bar_index, labelPrice, labelText, xloc.bar_index, yloc.price, color(na), above ? label.style_label_down : label.style_label_up, labelColor, size.tiny))
+    while signalLabels.size() > maxSignalLabelsInput
+        label.delete(signalLabels.shift())
+
+if showSignalLabelsInput
+    if buySignal
+        addSignalLabel('Buy ' + str.tostring(buyPrice, format.mintick), false, #66bb6a)
+    if flipPlus
+        addSignalLabel('Flip+', false, #ffd54f)
+    if flip
+        addSignalLabel('Flip', false, #b0bec5)
+    if sellSignal
+        addSignalLabel('TP', true, #ef5350)
+    if flop
+        addSignalLabel('Flop', true, #ce93d8)
+
+// ---------------------------------------------------------------------------------------------------------------------
+// FIBONACCI BOX
+// ---------------------------------------------------------------------------------------------------------------------
+// Levels of the last N bars, redrawn on the last bar. The AFL loops over bars but only ever uses EndValue(), so
+// the loop is redundant; the levels here are the same ones it ends up with.
+var line fibLine0 = na
+var line fibLine236 = na
+var line fibLine382 = na
+var line fibLine500 = na
+var line fibLine618 = na
+var line fibLine786 = na
+var line fibLine100 = na
+
+if showFibInput and barstate.islast
+    float fibLow = ta.lowest(low, fibLookbackInput)
+    float fibHigh = ta.highest(high, fibLookbackInput)
+    float fibRange = fibHigh - fibLow
+    int fibLeft = bar_index - fibLookbackInput + 1
+    int fibMid = bar_index - int(fibLookbackInput / 2)
+
+    line.delete(fibLine0)
+    line.delete(fibLine236)
+    line.delete(fibLine382)
+    line.delete(fibLine500)
+    line.delete(fibLine618)
+    line.delete(fibLine786)
+    line.delete(fibLine100)
+
+    fibLine0 := line.new(fibLeft, fibLow, bar_index, fibLow, xloc.bar_index, color = color.new(#9598a1, 40), style = line.style_dotted)
+    fibLine100 := line.new(fibLeft, fibHigh, bar_index, fibHigh, xloc.bar_index, color = color.new(#9598a1, 40), style = line.style_dotted)
+    fibLine236 := line.new(fibMid, fibLow + fibRange * 0.236, bar_index, fibLow + fibRange * 0.236, xloc.bar_index, color = color.new(#9598a1, 70), style = line.style_dotted)
+    fibLine382 := line.new(fibMid, fibLow + fibRange * 0.382, bar_index, fibLow + fibRange * 0.382, xloc.bar_index, color = color.new(#9598a1, 70), style = line.style_dotted)
+    fibLine500 := line.new(fibMid, fibLow + fibRange * 0.5, bar_index, fibLow + fibRange * 0.5, xloc.bar_index, color = color.new(#9598a1, 55), style = line.style_dotted)
+    fibLine618 := line.new(fibMid, fibLow + fibRange * 0.618, bar_index, fibLow + fibRange * 0.618, xloc.bar_index, color = color.new(#9598a1, 70), style = line.style_dotted)
+    fibLine786 := line.new(fibMid, fibLow + fibRange * 0.786, bar_index, fibLow + fibRange * 0.786, xloc.bar_index, color = color.new(#9598a1, 70), style = line.style_dotted)
+
+// ---------------------------------------------------------------------------------------------------------------------
+// INFO TABLE  (the AFL Title block)
+// ---------------------------------------------------------------------------------------------------------------------
+string tablePosition = tablePositionInput == 'Top Right' ? position.top_right : tablePositionInput == 'Top Left' ? position.top_left : tablePositionInput == 'Bottom Right' ? position.bottom_right : tablePositionInput == 'Bottom Left' ? position.bottom_left : position.middle_right
+
+var table infoTable = table.new(tablePosition, 2, 14, border_width = 1, border_color = color.new(#9598a1, 70), frame_width = 1, frame_color = color.new(#9598a1, 70))
+
+// @function            one table row
+// @returns             void
+infoRow(int row, string label, string value, color valueColor) =>
+    infoTable.cell(0, row, label, text_color = color.new(chart.fg_color, 35), text_size = size.tiny, text_halign = text.align_left)
+    infoTable.cell(1, row, value, text_color = valueColor, text_size = size.tiny, text_halign = text.align_right)
+
+if showTableInput and barstate.islast
+    color neutralColor = chart.fg_color
+    color upColor = #26a69a
+    color downColor = #ef5350
+
+    string stateText = inLong ? 'LONG since ' + str.tostring(barsInPosition) + ' bars' : 'FLAT'
+    string mfiState = mfi < mfiLowerInput ? 'Oversold' : mfi >= mfiUpperInput ? 'Overbought' : 'Neutral'
+    string rscState = rsc <= -rscLevelInput ? 'Oversold' : rsc >= rscLevelInput ? 'Overbought' : 'Neutral'
+    string scarState = scar <= -scarLevelInput ? 'Oversold' : scar >= scarLevelInput ? 'Overbought' : 'Neutral'
+    string rrgState = rrgLeading ? 'Leading' : rrgWeakening ? 'Weakening' : rrgLagging ? 'Lagging' : 'Improving'
+
+    infoTable.cell(0, 0, syminfo.ticker, text_color = neutralColor, text_size = size.small, text_halign = text.align_left)
+    infoTable.cell(1, 0, str.tostring(close, format.mintick) + '  ' + str.tostring(nz(ta.roc(close, 1)), '0.00') + '%', text_color = close >= nz(close[1]) ? upColor : downColor, text_size = size.small, text_halign = text.align_right)
+
+    infoRow(1, 'Position', stateText, inLong ? upColor : neutralColor)
+    infoRow(2, 'Profit', na(profitPercent) ? '-' : str.tostring(profitPercent, '0.00') + '%', na(profitPercent) ? neutralColor : profitPercent >= 0 ? upColor : downColor)
+    infoRow(3, 'Trx today', str.tostring(traxDay, '0.00') + ' B  (' + str.tostring(profOver20, '0') + '% vs 20d)', profOver20 > 0 ? upColor : neutralColor)
+    infoRow(4, 'Key levels', 'adon ' + str.tostring(adon, format.mintick) + ' | tsl ' + str.tostring(tsl, format.mintick), neutralColor)
+    infoRow(5, 'Buy / Avg down', str.tostring(priceBE1, format.mintick) + ' / ' + str.tostring(priceBE2, format.mintick), neutralColor)
+    infoRow(6, 'TP1 / TP2', str.tostring(priceTP1, format.mintick) + ' / ' + str.tostring(priceTP2, format.mintick), upColor)
+    infoRow(7, 'Cut loss / SL1', str.tostring(cutLoss, format.mintick) + ' / ' + str.tostring(priceSL1, format.mintick), downColor)
+    infoRow(8, 'ARA / ARB', str.tostring(priceARA, format.mintick) + ' / ' + str.tostring(priceARB, format.mintick), neutralColor)
+    infoRow(9, '52w range', str.tostring(yearLow, format.mintick) + ' - ' + str.tostring(yearHigh, format.mintick), neutralColor)
+    infoRow(10, 'MFI / RSC / SCAR', str.tostring(mfi, '0.0') + ' ' + mfiState + ' | ' + str.tostring(rsc, '0.00') + ' ' + rscState + ' | ' + str.tostring(scar, '0.0') + ' ' + scarState, neutralColor)
+    infoRow(11, 'Rotation', rrgState + (rrgEntryUp ? '  (entry)' : rrgExitDown ? '  (exit)' : ''), rrgLeading or rrgImproving ? upColor : downColor)
+    infoRow(12, 'Trend S/M/L', trendWord(trendShort) + ' | ' + trendWord(trendMid) + ' | ' + trendWord(trendLong), trendShort > 0 ? upColor : downColor)
+    infoRow(13, 'Tick size', str.tostring(tickSize, '0'), neutralColor)
+
+// ---------------------------------------------------------------------------------------------------------------------
+// WATERMARK  (the GfxTextOut block)
+// ---------------------------------------------------------------------------------------------------------------------
+var table watermarkTable = table.new(position.middle_center, 1, 3)
+
+if showWatermarkInput and barstate.islast
+    color watermarkColor = close > open ? color.new(#26a69a, 55) : close < open ? color.new(#ef5350, 55) : color.new(#9598a1, 55)
+    watermarkTable.cell(0, 0, str.tostring(close, format.mintick), text_color = watermarkColor, text_size = size.large)
+    watermarkTable.cell(0, 1, syminfo.ticker, text_color = watermarkColor, text_size = size.huge)
+    watermarkTable.cell(0, 2, syminfo.description, text_color = color.new(#9598a1, 60), text_size = size.normal)
+
+// ---------------------------------------------------------------------------------------------------------------------
+// ALERTS
+// ---------------------------------------------------------------------------------------------------------------------
+// Use "Once Per Bar Close": the stop-and-reverse lines can still move inside a forming bar.
+alertcondition(buySignal, 'Buy', 'Close crossed above the slow stop-and-reverse line')
+alertcondition(sellSignal, 'Sell / TP', 'Close crossed below the slow stop-and-reverse line')
+alertcondition(flipPlus, 'Flip+', 'Clean flip: close crossed the fast line above the slow line')
+alertcondition(flip, 'Flip', 'Flip with a bearish MFI divergence present')
+alertcondition(flop, 'Flop', 'Stretched (SCAR) with relative strength or money flow turning down')
+alertcondition(rrgEntryUp, 'Rotation Entry', 'Rotation moved from lagging to improving on rising volume')
+alertcondition(rrgExitDown, 'Rotation Exit', 'Rotation moved from leading to weakening on falling volume')
